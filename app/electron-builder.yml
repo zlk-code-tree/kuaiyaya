@@ -1,0 +1,36 @@
+appId: cn.kuaiyaya.desktop
+productName: 快鸭鸭
+copyright: 黑曼巴的紫金王朝
+directories:
+  output: release
+  buildResources: resources
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: resources/ffmpeg/darwin-arm64
+    to: ffmpeg/darwin-arm64
+    filter:
+      - ffmpeg
+      - ffprobe
+  - from: resources/assets
+    to: assets
+mac:
+  icon: resources/icon.png
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  category: public.app-category.video
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  minimumSystemVersion: "13.0"
+  extendInfo:
+    LSMinimumSystemVersion: "13.0"
+asar: true
+asarUnpack: []
+npmRebuild: false
+electronVersion: 33.2.0
