@@ -1,11 +1,13 @@
 import { BrowserWindow, ipcMain, clipboard, app } from "electron";
-import { pathToFileURL } from "node:url";
+import { readFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import type { EncoderCaps, ProbeInfo, StartInput } from "../shared/types";
+import type { EncoderCaps, ProbeInfo, QualityAnalysis, StartInput } from "../shared/types";
+import { candidateTargets } from "../shared/quality";
 import { APP_NAME, FEEDBACK_EMAIL, MAINTAINER, MSG } from "../shared/messages";
 import { LicenseSession } from "./license/session";
 import { probeFile, isLikelyVideoPath } from "./ffmpeg/probe";
 import { CompressJob } from "./ffmpeg/job";
+import { QualityAnalyzer } from "./ffmpeg/quality-analysis";
 import { checkGuards } from "./fs/guard";
 import { selectVideo } from "./fs/dialog";
 import { openFile, revealInFinder } from "./fs/open";
@@ -16,11 +18,31 @@ export interface MainContext {
   session: LicenseSession;
   getConfig: () => AppConfig;
   job: CompressJob;
+  analyzer: QualityAnalyzer;
   getCaps: () => Promise<EncoderCaps>;
   getFfmpeg: () => Promise<{ ffmpeg: string; ffprobe: string }>;
 }
 
 const probes = new Map<string, ProbeInfo>();
+const signatures = new Map<string, { size: number; mtimeMs: number; ino: number }>();
+const analyses = new Map<string, QualityAnalysis>();
+let pendingAnalysis: { cancelled: boolean } | null = null;
+
+async function currentProbe(filePath: string): Promise<ProbeInfo> {
+  const probe = probes.get(filePath);
+  const previous = signatures.get(filePath);
+  if (!probe || !previous) throw new Error(MSG.unsupported);
+  const file = await stat(filePath).catch(() => null);
+  if (!file || file.size !== previous.size || file.mtimeMs !== previous.mtimeMs || file.ino !== previous.ino) {
+    analyses.delete(filePath);
+    throw new Error("视频文件已发生变化，请重新选择。");
+  }
+  return probe;
+}
+
+function validTarget(probe: ProbeInfo, targetMB: number): boolean {
+  return candidateTargets(targetMB, probe.sizeBytes).length > 0;
+}
 
 export function registerIpc(ctx: MainContext): void {
   ipcMain.handle("select-video", async () => {
@@ -37,7 +59,11 @@ export function registerIpc(ctx: MainContext): void {
     const bins = await ctx.getFfmpeg();
     try {
       const info = await probeFile(bins.ffprobe, filePath);
+      const file = await stat(info.path);
+      if (file.size !== info.sizeBytes) throw new Error("文件已发生变化");
       probes.set(info.path, info);
+      signatures.set(info.path, { size: file.size, mtimeMs: file.mtimeMs, ino: file.ino });
+      analyses.delete(info.path);
       return info;
     } catch {
       throw new Error(MSG.unsupported);
@@ -47,13 +73,13 @@ export function registerIpc(ctx: MainContext): void {
   ipcMain.handle("check-start-guards", async (_e, input: StartInput) => {
     const probe = probes.get(input.filePath);
     if (!probe) return { ok: false, reason: "unsupported", message: MSG.unsupported };
+    if (!validTarget(probe, input.targetMB)) return { ok: false, reason: "target_too_large", message: "请输入小于原片大小的有效目标。" };
     return checkGuards(probe, input.targetMB);
   });
 
   ipcMain.handle("start-compress", async (_e, input: StartInput) => {
-    if (ctx.job.isRunning) return;
-    const probe = probes.get(input.filePath);
-    if (!probe) throw new Error(MSG.unsupported);
+    const probe = await currentProbe(input.filePath);
+    if (!validTarget(probe, input.targetMB)) throw new Error("请输入小于原片大小的有效目标。");
     const decision = await ctx.session.decideStart();
     if (decision.action !== "start") {
       throw Object.assign(new Error(decision.action === "block" ? decision.message : "请稍候…"), {
@@ -66,12 +92,17 @@ export function registerIpc(ctx: MainContext): void {
     }
     const bins = await ctx.getFfmpeg();
     const caps = await ctx.getCaps();
+    if (ctx.job.isRunning || ctx.analyzer.isRunning || pendingAnalysis) throw new Error("正在处理其他任务，请稍候。");
+    const previous = analyses.get(input.filePath);
+    const preferredEncoder = previous?.candidates.some((candidate) => candidate.targetMB === input.targetMB)
+      ? previous.encoder : undefined;
     const win = ctx.getWindow();
     void ctx.job.run({
       ffmpegPath: bins.ffmpeg,
       probe,
       targetMB: input.targetMB,
       caps,
+      preferredEncoder,
       hooks: {
         exists: (p) => existsSync(p),
         onProgress: (ev) => win?.webContents.send("compress-progress", ev),
@@ -83,6 +114,41 @@ export function registerIpc(ctx: MainContext): void {
 
   ipcMain.handle("cancel-compress", async () => {
     await ctx.job.cancel();
+  });
+
+  ipcMain.handle("analyze-quality", async (_e, input: StartInput) => {
+    if (ctx.job.isRunning || pendingAnalysis) throw new Error("正在处理其他任务，请稍候。");
+    const pending = { cancelled: false };
+    pendingAnalysis = pending;
+    const win = ctx.getWindow();
+    try {
+      const probe = await currentProbe(input.filePath);
+      if (!validTarget(probe, input.targetMB)) throw new Error("请输入小于原片大小的有效目标。");
+      const decision = await ctx.session.decideStart();
+      if (decision.action !== "start") {
+        throw new Error(decision.action === "block" ? decision.message : "正在校验 Key，请稍候。");
+      }
+      const bins = await ctx.getFfmpeg();
+      const caps = await ctx.getCaps();
+      if (pending.cancelled || !win || win.isDestroyed()) throw new Error("已取消画质分析。");
+      if (ctx.job.isRunning || ctx.analyzer.isRunning) throw new Error("正在处理其他任务，请稍候。");
+      const result = await ctx.analyzer.run({
+        ffmpeg: bins.ffmpeg, ffprobe: bins.ffprobe, probe, targetMB: input.targetMB, caps,
+        onProgress: (event) => { if (!win.isDestroyed()) win.webContents.send("analysis-progress", event); },
+      });
+      if (pending.cancelled) throw new Error("已取消画质分析。");
+      await currentProbe(input.filePath);
+      if (pending.cancelled) throw new Error("已取消画质分析。");
+      analyses.set(input.filePath, result);
+      return result;
+    } finally {
+      if (pendingAnalysis === pending) pendingAnalysis = null;
+    }
+  });
+
+  ipcMain.handle("cancel-analysis", async () => {
+    if (pendingAnalysis) pendingAnalysis.cancelled = true;
+    await ctx.analyzer.cancel();
   });
 
   ipcMain.handle("open-file", async (_e, filePath: string) => {
@@ -106,13 +172,21 @@ export function registerIpc(ctx: MainContext): void {
   ipcMain.handle("license-reenter", async () => ctx.session.reenterKey());
 
   ipcMain.handle("about", async () => {
-    const qr = qrPath();
+    let qrSrc = "";
+    try {
+      const qr = qrPath();
+      if (existsSync(qr)) {
+        qrSrc = `data:image/png;base64,${(await readFile(qr)).toString("base64")}`;
+      }
+    } catch {
+      qrSrc = "";
+    }
     return {
       name: APP_NAME,
       version: app.getVersion(),
       maintainer: MAINTAINER,
       email: FEEDBACK_EMAIL,
-      qrSrc: pathToFileURL(qr).toString(),
+      qrSrc,
     };
   });
 

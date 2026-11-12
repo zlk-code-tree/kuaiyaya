@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { hostname } from "node:os";
+import { join } from "node:path";
 import { computeDeviceId } from "../../shared/fingerprint";
 
 const execFileAsync = promisify(execFile);
@@ -26,6 +27,13 @@ export async function readVolumeUUID(): Promise<string> {
 }
 
 export async function currentDeviceId(): Promise<string> {
+  if (process.platform === "win32") {
+    const reg = join(process.env.SystemRoot || "C:\\Windows", "System32", "reg.exe");
+    const { stdout } = await execFileAsync(reg, ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid", "/reg:64"]);
+    const match = stdout.match(/MachineGuid\s+REG_\w+\s+([0-9a-f-]+)/i);
+    if (!match) throw new Error("无法读取 Windows MachineGuid");
+    return computeDeviceId(match[1].toLowerCase(), "windows-machine-guid");
+  }
   const hw = await readIOPlatformUUID();
   const osInstall = await readVolumeUUID();
   return computeDeviceId(hw, osInstall);

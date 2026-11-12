@@ -5,7 +5,8 @@ import type { EncoderCaps } from "../shared/types";
 import { resolveBinaries } from "./ffmpeg/binary";
 import { detectCaps } from "./ffmpeg/detect";
 import { CompressJob } from "./ffmpeg/job";
-import { KeychainStore, MemorySecretStore } from "./license/store";
+import { QualityAnalyzer } from "./ffmpeg/quality-analysis";
+import { KeychainStore, MemorySecretStore, WindowsSecretStore } from "./license/store";
 import { LicenseSession } from "./license/session";
 import { registerIpc } from "./ipc";
 import { loadConfig, type AppConfig } from "./paths";
@@ -20,7 +21,8 @@ if (!gotLock) {
 let mainWindow: BrowserWindow | null = null;
 let config: AppConfig;
 const job = new CompressJob();
-const secrets = process.platform === "darwin" ? new KeychainStore() : new MemorySecretStore();
+const analyzer = new QualityAnalyzer();
+const secrets = process.platform === "darwin" ? new KeychainStore() : process.platform === "win32" ? new WindowsSecretStore() : new MemorySecretStore();
 let session: LicenseSession;
 let capsPromise: Promise<EncoderCaps> | null = null;
 let binsPromise: Promise<{ ffmpeg: string; ffprobe: string }> | null = null;
@@ -48,8 +50,7 @@ function createWindow(): void {
     resizable: false,
     title: APP_NAME,
     backgroundColor: "#f6f6f8",
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 16, y: 18 },
+    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 18 } } : {}),
     show: false,
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
@@ -61,6 +62,20 @@ function createWindow(): void {
   win.setMenuBarVisibility(false);
   win.on("ready-to-show", () => win.show());
   win.on("close", (e) => {
+    if (analyzer.isRunning) {
+      e.preventDefault();
+      void (async () => {
+        const res = await dialog.showMessageBox(win, {
+          type: "question", buttons: ["继续分析", "取消分析并关闭"], defaultId: 0, cancelId: 0,
+          title: "确定取消画质分析？", message: "确定取消画质分析并关闭？", detail: "临时试压文件会被清理，原片不会改动。",
+        });
+        if (res.response === 1) {
+          await analyzer.cancel();
+          win.destroy();
+        }
+      })();
+      return;
+    }
     if (!job.isRunning) return;
     e.preventDefault();
     void (async () => {
@@ -104,6 +119,7 @@ app.whenReady().then(async () => {
     session,
     getConfig: () => config,
     job,
+    analyzer,
     getCaps,
     getFfmpeg: getBins,
   });
@@ -117,6 +133,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  if (analyzer.isRunning) void analyzer.cancel();
   if (job.isRunning) {
     void job.cancel();
   }

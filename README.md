@@ -15,13 +15,13 @@
 
 ## 已拍板的实现约定（摘要）
 
-- 只做 macOS Apple 芯片（`darwin-arm64`），最低 macOS 13；Intel / Windows 后补；先不公证。
-- 压缩默认走最快路径：探测到 `hevc_videotoolbox` 就硬编，没有或失败回退 `libx265` 软编。
+- 支持 macOS Apple 芯片（`darwin-arm64`，最低 macOS 13）和 Windows x64；当前构建均未签名。
+- 压缩默认走最快路径：探测到 `hevc_videotoolbox` 就硬编，没有或失败回退 `libx265` 软编。使用画质分析后，会按试压结果选用编码器。
 - 默认目标为原文件大小的一半，用户可调。目标体积**不得超过**；略超则最多自动再压一次。
-- 输出：长边不超过 1080 的 HEVC `.mp4`，`-tag:v hvc1`，`+faststart`。
+- 输出：长边不超过 1920 的 HEVC `.mp4`，`-tag:v hvc1`，`+faststart`；小尺寸视频不放大。
 - Key 必须联网校验。第一次输入走 `POST /v1/license/activate`（才会绑定）；之后打开直进主界面，后台 `POST /v1/license/validate`（必须带 key + deviceId，绝不自动重绑，不使用 `bind_token`）。
-- 设备指纹：`SHA-256("kuaiyaya.v1" + "|" + IOPlatformUUID + "|" + 系统卷 Volume UUID)` 小写 hex。
-- Key 与 deviceId 存进 macOS 钥匙串，不进明文配置。
+- macOS 设备指纹由 IOPlatformUUID 和系统卷 Volume UUID 计算；Windows 使用 MachineGuid 计算。系统重装可能改变设备标识，需要管理员解绑。
+- Key 与 deviceId 在 macOS 使用钥匙串保存，在 Windows 使用系统 DPAPI 加密保存，不进明文配置。
 
 ## 在 Mac 上启动 Key 服务
 
@@ -89,6 +89,12 @@ npm run dev
 
 钥匙串只在 macOS 上写入。Linux 开发机不会把 Key 写进明文配置，只用于无法实测钥匙串的情况。
 
+### 压缩前分析画质
+
+选择视频并设置目标后，可点击「分析画质」。应用在本机抽取不同位置的短片段，分别按当前目标和一个较大的备选目标试压，展示样片评分、粗略的全片体积估计和建议目标；可以应用建议，也可以保留原目标。分析需要有效 Key，可随时取消，临时文件会清理。
+
+画质比较优先使用 FFmpeg 的 `libvmaf`，不可用时回退 `ssim`。在硬件试压结果偏低且可用软件编码时，会进一步比较 `libx265` 的样片；正式压缩沿用选中的编码器。分数和体积均为抽样估计，建议检查输出中的小字、字幕和动态画面；抽样结果不是全片画质或体积的保证。为得到结果可能需要额外时间和临时磁盘空间。
+
 ## 打 darwin-arm64 包
 
 ```bash
@@ -101,6 +107,20 @@ npm run pack:mac
 产物在 `app/release/`。第一期不公证，内部试用时若提示「未识别的开发者」，在访达中右键打开并确认即可。
 
 最低系统版本 macOS 13，架构仅 Apple 芯片。
+
+## Windows x64 版本
+
+Windows 版本以 ZIP 提供：完整解压后打开文件夹中的 `快鸭鸭.exe`。需要 64 位 Windows 10 或 Windows 11；当前使用 libx265 软件编码，首次开通及使用时需要连接 Key 服务。构建未签名，可能出现 Windows 安全提示。
+
+默认 Key 服务地址为 `http://127.0.0.1:8080`，它指向运行应用的 Windows 电脑自身。若服务部署在其他电脑，请在首次启动后退出应用，编辑 `%APPDATA%\快鸭鸭\config.json`（没有此文件时新建）：
+
+```json
+{"apiBaseUrl":"http://服务端地址:8080"}
+```
+
+确保服务端监听可访问的地址并允许对应端口。跨网络部署时应使用 HTTPS。
+
+构建时先运行 `./scripts/fetch-ffmpeg-windows.sh`，然后在 `app/` 运行 `npm install` 和 `npm run pack:win`。ZIP 生成于 `app/release/`。Windows 适配仍需在 Windows 实机验证开通、重启、压缩、取消和画质分析。
 
 ## 本地检查
 

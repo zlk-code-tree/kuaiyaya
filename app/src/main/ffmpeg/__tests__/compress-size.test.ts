@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
-import { exceedsTarget, targetBytesFromMB } from "../../../shared/bitrate";
+import { targetBytesFromMB } from "../../../shared/bitrate";
 import type { EncoderCaps, ProbeInfo } from "../../../shared/types";
 import { CompressJob } from "../job";
 import { probeFile } from "../probe";
@@ -20,14 +20,14 @@ const hasFfmpeg = (() => {
   }
 })();
 
-describe.skipIf(!hasFfmpeg)("libx265 size cap on Linux", () => {
+describe.skipIf(!hasFfmpeg)("libx265 size cap", () => {
   let dir = "";
 
   afterAll(async () => {
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
-  it("keeps the output at or under the target size (不得超过), with at most one retry", async () => {
+  it("saves a playable HEVC result within the target and smaller than the input", async () => {
     dir = await mkdtemp(join(tmpdir(), "kuaiyaya-cmp-"));
     const input = join(dir, "sample.mp4");
     // 约 3 秒、720p 彩条+噪声，软编可以压到明显小于原片。
@@ -71,7 +71,7 @@ describe.skipIf(!hasFfmpeg)("libx265 size cap on Linux", () => {
     };
 
     const job = new CompressJob();
-    const done = await new Promise<{ outputPath: string; outputBytes: number; retried: boolean }>((resolve, reject) => {
+    const done = await new Promise<{ outputPath: string; outputBytes: number; retried: boolean; exceededTarget: boolean }>((resolve, reject) => {
       void job.run({
         ffmpegPath: bins.ffmpeg,
         probe,
@@ -80,13 +80,16 @@ describe.skipIf(!hasFfmpeg)("libx265 size cap on Linux", () => {
         hooks: {
           exists: (p) => existsSync(p),
           onProgress: () => undefined,
-          onDone: (e) => resolve({ outputPath: e.outputPath, outputBytes: e.outputBytes, retried: e.retried }),
+          onDone: (e) => resolve({ outputPath: e.outputPath, outputBytes: e.outputBytes, retried: e.retried, exceededTarget: e.exceededTarget }),
           onFail: (e) => reject(new Error(e.message)),
         },
       });
     });
 
-    expect(exceedsTarget(done.outputBytes, targetBytesFromMB(targetMB))).toBe(false);
+    expect(done.exceededTarget).toBe(false);
+    expect(done.outputBytes).toBeLessThanOrEqual(targetBytesFromMB(targetMB));
+    expect(done.outputBytes).toBeLessThan(orig);
+    expect(done.outputBytes).toBeGreaterThan(0);
     const info = execFileSync("ffprobe", [
       "-v",
       "error",
@@ -101,4 +104,40 @@ describe.skipIf(!hasFfmpeg)("libx265 size cap on Linux", () => {
     expect(info).toMatch(/hevc|h265/i);
     expect(info).toMatch(/hvc1/i);
   }, 120_000);
+});
+
+it("retries an oversized output once and does not save it if it still exceeds the target", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kuaiyaya-oversize-"));
+  try {
+    const executable = join(dir, "fake-ffmpeg");
+    const calls = join(dir, "calls");
+    await writeFile(executable, `#!/bin/sh\necho run >> "${calls}"\nfor last do :; done\ndd if=/dev/zero of="$last" bs=1048576 count=2 2>/dev/null\n`);
+    await chmod(executable, 0o755);
+    const input = join(dir, "input.mp4");
+    const probe: ProbeInfo = {
+      path: input, name: "input.mp4", sizeBytes: 5 * 1024 * 1024,
+      durationSec: 30, width: 1280, height: 720, rotation: 0,
+      displayWidth: 1280, displayHeight: 720, videoCodec: "h264", hasAudio: false, container: "mp4",
+    };
+    const caps: EncoderCaps = {
+      x265: false, videotoolbox: true, ffmpegVersion: "test", probedAt: "", ffmpegPath: executable,
+    };
+    const job = new CompressJob();
+    const failure = await new Promise<string>((resolve, reject) => {
+      void job.run({
+        ffmpegPath: executable, probe, targetMB: 1, caps,
+        hooks: {
+          exists: existsSync,
+          onProgress: () => undefined,
+          onDone: () => reject(new Error("oversized result was saved")),
+          onFail: (event) => resolve(event.message),
+        },
+      });
+    });
+    expect(failure).toContain("未能压到目标体积");
+    expect((await readFile(calls, "utf8")).trim().split("\n")).toHaveLength(2);
+    expect(existsSync(join(dir, "input_720p.mp4"))).toBe(false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

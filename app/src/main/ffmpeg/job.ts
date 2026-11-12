@@ -4,6 +4,7 @@ import type { DoneEvent, EncoderKind, FailEvent, ProbeInfo, ProgressEvent } from
 import { exceedsTarget, retryVideoBitrateBps, targetBytesFromMB } from "../../shared/bitrate";
 import { selectEncoder } from "../../shared/encoder";
 import { allocateOutputPath, partialPath, passLogPrefix } from "../../shared/output-name";
+import { displaySize, fitOutput, outputLabel } from "../../shared/scale";
 import { buildCommands } from "./bitrate-cmd";
 import { removeTempFiles } from "./cleanup";
 import { etaSeconds, parseProgressLine, ratioFromOutTime } from "./progress";
@@ -21,6 +22,7 @@ export interface JobRequest {
   probe: ProbeInfo;
   targetMB: number;
   caps: EncoderCaps;
+  preferredEncoder?: EncoderKind;
   hooks: JobHooks;
 }
 
@@ -29,6 +31,11 @@ export class CompressJob {
   private cancelled = false;
   private temps: string[] = [];
   private running = false;
+  private startedAt = 0;
+
+  private elapsedSec(): number {
+    return Math.max(0, Math.round((Date.now() - this.startedAt) / 1000));
+  }
 
   get isRunning(): boolean {
     return this.running;
@@ -60,27 +67,31 @@ export class CompressJob {
     this.running = true;
     this.cancelled = false;
     this.temps = [];
+    this.startedAt = Date.now();
     const targetBytes = targetBytesFromMB(req.targetMB);
-    const outputPath = allocateOutputPath(req.probe.path, req.hooks.exists);
+    const outSize = fitOutput(displaySize(req.probe.width, req.probe.height, req.probe.rotation));
+    const outputPath = allocateOutputPath(req.probe.path, req.hooks.exists, outSize);
     const tempOut = partialPath(outputPath);
     const passLog = passLogPrefix(outputPath);
     this.temps.push(tempOut, passLog);
 
-    let encoder = selectEncoder(req.caps);
+    const caps = req.preferredEncoder === "x265" && req.caps.x265
+      ? { ...req.caps, videotoolbox: false }
+      : req.caps;
+    let encoder = selectEncoder(caps);
     if (!encoder) {
       this.running = false;
       req.hooks.onFail({ message: "本机没有可用的 HEVC 编码器。" });
       return;
     }
 
-    let retried = false;
     let used = encoder;
     let lastFailed: EncoderKind | undefined;
 
     try {
       for (;;) {
         if (this.cancelled) throw new CancelError();
-        encoder = selectEncoder(req.caps, { lastFailed });
+        encoder = selectEncoder(caps, { lastFailed });
         if (!encoder) {
           throw new Error("encoder unavailable");
         }
@@ -94,8 +105,20 @@ export class CompressJob {
           targetBytes,
           passLog,
         });
+        let retried = false;
         try {
-          await this.runPlan(req, plan, retried);
+          await this.runPlan(req, plan, false);
+          const firstStat = await stat(tempOut);
+          if (exceedsTarget(firstStat.size, targetBytes)) {
+            retried = true;
+            const videoBps = retryVideoBitrateBps(plan.videoBitrateBps, firstStat.size, targetBytes);
+            await removeTempFiles(this.temps);
+            const retryPlan = buildCommands({
+              encoder, ffmpegPath: req.ffmpegPath, input: req.probe.path,
+              output: tempOut, probe: req.probe, targetBytes, videoBps, passLog,
+            });
+            await this.runPlan(req, retryPlan, true);
+          }
         } catch (err) {
           if (this.cancelled) throw new CancelError();
           if (encoder === "videotoolbox" && req.caps.x265 && isEncoderFailure(err)) {
@@ -106,39 +129,13 @@ export class CompressJob {
           throw err;
         }
 
-        const st = await stat(tempOut);
-        if (exceedsTarget(st.size, targetBytes) && !retried) {
-          retried = true;
-          const nextBps = retryVideoBitrateBps(plan.videoBitrateBps, st.size, targetBytes);
-          await removeTempFiles([tempOut]);
-          const retryPlan = buildCommands({
-            encoder,
-            ffmpegPath: req.ffmpegPath,
-            input: req.probe.path,
-            output: tempOut,
-            probe: req.probe,
-            targetBytes,
-            videoBps: nextBps,
-            passLog,
-          });
-          req.hooks.onProgress({
-            encoder,
-            phase: "retry",
-            ratio: 0,
-            percent: 0,
-            etaSec: null,
-            message: "输出略超目标，正在按更低码率再压一次",
-          });
-          await this.runPlan(req, retryPlan, true);
-        }
-
         const finalStat = await stat(tempOut);
-        if (exceedsTarget(finalStat.size, targetBytes)) {
+        const exceededTarget = exceedsTarget(finalStat.size, targetBytes);
+        if (this.cancelled) throw new CancelError();
+        if (exceededTarget || finalStat.size >= req.probe.sizeBytes) {
           await removeTempFiles(this.temps);
           this.running = false;
-          req.hooks.onFail({
-            message: `输出体积 ${formatMB(finalStat.size)} 超过目标 ${req.targetMB} MB，未保存结果。`,
-          });
+          req.hooks.onFail({ message: "未能压到目标体积，未保存压缩结果。请适当调大目标后重试；原片没有改动。" });
           return;
         }
 
@@ -152,6 +149,8 @@ export class CompressJob {
           savedBytes: Math.max(0, req.probe.sizeBytes - finalStat.size),
           encoder: used,
           retried,
+          exceededTarget,
+          elapsedSec: this.elapsedSec(),
         });
         return;
       }
@@ -182,14 +181,27 @@ export class CompressJob {
           resolve();
           return;
         }
-        const phase = plan.encoder === "x265" ? (index === 0 ? "pass1" : "pass2") : isRetry ? "retry" : "single";
+        const twoPass = plan.args.length > 1;
+        const phase = twoPass ? (index === 0 ? "pass1" : "pass2") : isRetry ? "retry" : "single";
+        const dim = outputLabel(displaySize(req.probe.width, req.probe.height, req.probe.rotation));
         const message =
           phase === "pass1"
             ? "第一遍：分析画面，为第二遍编码做准备"
             : phase === "pass2"
-              ? "第二遍：按目标大小编码为 1080p HEVC"
-              : "正在编码为 1080p HEVC";
+              ? `第二遍：按目标上限编码为 ${dim} HEVC`
+              : isRetry
+                ? `输出略超目标，正在按上限再压为 ${dim} HEVC`
+                : `正在按目标体积编码为 ${dim} HEVC`;
         const started = Date.now();
+        req.hooks.onProgress({
+          encoder: plan.encoder,
+          phase,
+          ratio: 0,
+          percent: 0,
+          etaSec: null,
+          elapsedSec: this.elapsedSec(),
+          message,
+        });
         const child = spawn(req.ffmpegPath, args, { stdio: ["ignore", "pipe", "pipe"] });
         this.child = child;
         let stderr = "";
@@ -212,6 +224,7 @@ export class CompressJob {
                 ratio,
                 percent: Math.round(ratio * 100),
                 etaSec: etaSeconds(ratio, Date.now() - started),
+                elapsedSec: this.elapsedSec(),
                 message,
               });
             }
@@ -268,8 +281,4 @@ function isEncoderFailure(err: unknown): boolean {
     );
   }
   return false;
-}
-
-function formatMB(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

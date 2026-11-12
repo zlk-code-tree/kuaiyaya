@@ -1,5 +1,6 @@
 import { app } from "electron";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 
@@ -35,9 +36,16 @@ export async function saveConfig(cfg: AppConfig): Promise<void> {
 }
 
 export function qrPath(): string {
+  const candidates: string[] = [];
   const resources = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
   if (app.isPackaged && resources) {
-    return join(resources, "assets", "feedback-wechat-qr.png");
+    candidates.push(join(resources, "assets", "feedback-wechat-qr.png"));
   }
-  return join(app.getAppPath(), "resources", "assets", "feedback-wechat-qr.png");
+  try {
+    candidates.push(join(dirname(fileURLToPath(import.meta.url)), "../../resources/assets/feedback-wechat-qr.png"));
+  } catch {
+    /* ignore */
+  }
+  candidates.push(join(app.getAppPath(), "resources", "assets", "feedback-wechat-qr.png"));
+  return candidates.find((item) => existsSync(item)) ?? candidates[candidates.length - 1]!;
 }

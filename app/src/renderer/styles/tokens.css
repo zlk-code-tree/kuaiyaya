@@ -1,6 +1,6 @@
 :root {
   --bg: #e8e8ed;
-  --window: #f6f6f8;
+  --window: #f7f6f4;
   --surface: #ffffff;
   --text: #1d1d1f;
   --text-secondary: #6e6e73;
@@ -17,4 +17,6 @@
   --yellow: #ffd60a;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
   --radius: 10px;
+  --warm-wash: rgba(255, 214, 10, 0.10);
+  --warm-wash-2: rgba(255, 159, 10, 0.06);
 }

@@ -7,16 +7,32 @@ export function parseProgressLine(line: string): { outTimeUs?: number; done?: bo
   if (eq < 0) return {};
   const key = trimmed.slice(0, eq).trim();
   const value = trimmed.slice(eq + 1).trim();
-  if (key === "out_time_us" || key === "out_time_ms") {
+  if (key === "out_time_us" || key === "out_time_ms" || key === "out_time_ns") {
     const n = Number(value);
     if (!Number.isFinite(n) || n < 0) return {};
-    const us = key === "out_time_ms" ? n * 1000 : n;
+    const us = key === "out_time_ns" ? n / 1000 : key === "out_time_ms" ? n * 1000 : n;
+    return { outTimeUs: us };
+  }
+  if (key === "out_time") {
+    const us = parseClockToUs(value);
+    if (us == null) return {};
     return { outTimeUs: us };
   }
   if (key === "progress" && value === "end") {
     return { done: true };
   }
   return {};
+}
+
+/** 解析 `out_time=HH:MM:SS.microseconds`。 */
+export function parseClockToUs(value: string): number | undefined {
+  const m = value.trim().match(/^(-?\d+):(\d+):(\d+(?:\.\d+)?)$/);
+  if (!m) return undefined;
+  const hours = Number(m[1]);
+  const minutes = Number(m[2]);
+  const seconds = Number(m[3]);
+  if (![hours, minutes, seconds].every(Number.isFinite) || hours < 0) return undefined;
+  return (hours * 3600 + minutes * 60 + seconds) * 1_000_000;
 }
 
 export function ratioFromOutTime(outTimeUs: number, durationSec: number): number {

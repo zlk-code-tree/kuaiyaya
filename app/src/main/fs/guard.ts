@@ -14,7 +14,7 @@ export async function checkGuards(probe: ProbeInfo, targetMB: number): Promise<G
   } catch {
     return { ok: false, reason: "no_write", message: MSG.noWrite };
   }
-  const need = requiredDiskBytes(targetMB);
+  const need = requiredDiskBytes(targetMB, probe.sizeBytes);
   try {
     const fs = await statfs(dir);
     const free = Number(fs.bavail) * Number(fs.bsize);

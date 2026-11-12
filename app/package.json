@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "pack:mac": "electron-vite build && electron-builder --mac --arm64",
+    "pack:win": "electron-vite build && electron-builder --win --x64",
     "postinstall": "echo 'skip electron-builder install-app-deps on linux box if needed'"
   },
   "dependencies": {},

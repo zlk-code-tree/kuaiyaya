@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="快鸭鸭">
+  <defs>
+    <radialGradient id="bodyGrad" cx="34%" cy="30%" r="78%">
+      <stop offset="0%" stop-color="#FFD60A"/>
+      <stop offset="62%" stop-color="#FFD60A"/>
+      <stop offset="100%" stop-color="#FFC107"/>
+    </radialGradient>
+    <radialGradient id="headGrad" cx="36%" cy="28%" r="74%">
+      <stop offset="0%" stop-color="#FFD60A"/>
+      <stop offset="70%" stop-color="#FFD60A"/>
+      <stop offset="100%" stop-color="#FFC107"/>
+    </radialGradient>
+    <linearGradient id="beakGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF9F0A"/>
+      <stop offset="100%" stop-color="#F5820D"/>
+    </linearGradient>
+    <style>
+      .shadow { transform-origin: 32px 56.5px; }
+      .float { transform-origin: 32px 52px; }
+      .eye { transform-origin: 39.5px 21px; }
+      .duck-idle .float { animation: bob 5s ease-in-out infinite; }
+      .duck-idle .shadow { animation: shadowPulse 5s ease-in-out infinite; }
+      .duck-idle .eye { animation: blink 5s ease-in-out infinite; }
+      @keyframes bob {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-1.6px); }
+      }
+      @keyframes shadowPulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(.92); opacity: .75; }
+      }
+      @keyframes blink {
+        0%, 46%, 54%, 100% { transform: scaleY(1); }
+        49%, 51% { transform: scaleY(.08); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .float, .shadow, .eye { animation: none !important; }
+      }
+    </style>
+  </defs>
+  <g class="duck-static">
+    <ellipse class="shadow" cx="32" cy="56.5" rx="14" ry="3" fill="#000" opacity=".12"/>
+    <g class="float">
+      <path d="M14 40c0-10 10-18 22-16 8 1 16 8 16 16 0 9-8 16-20 16s-18-7-18-16z" fill="url(#bodyGrad)"/>
+      <path d="M20 40c0-5 5-9 11-8 2 .3 4 2 5 4-6 1-11 4-13 8-1.2-1.2-3-2.5-3-4z" fill="#FFC107" opacity=".85"/>
+      <ellipse cx="26" cy="36" rx="7" ry="4.5" fill="#FFD60A" opacity=".55"/>
+      <circle cx="42" cy="23" r="13" fill="url(#headGrad)"/>
+      <ellipse cx="37.5" cy="18.5" rx="5.5" ry="4" fill="#fff" opacity=".28"/>
+      <path d="M53 23c7.5.5 11 3 10 6.2-1 2.8-5.5 3.5-10.5 3.2-2.2 0-3.5-1.5-3.6-3.3-.2-2.2 1.2-5.5 4.1-6.1z" fill="url(#beakGrad)"/>
+      <path d="M52 26.2h9" stroke="#F5820D" stroke-width="1" stroke-linecap="round" opacity=".5"/>
+      <g class="eye">
+        <circle cx="39.5" cy="21" r="2.3" fill="#1C1C1E"/>
+        <circle cx="40.3" cy="20.3" r=".7" fill="#fff"/>
+      </g>
+    </g>
+  </g>
+</svg>

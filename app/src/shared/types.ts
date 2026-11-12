@@ -28,6 +28,34 @@ export interface StartInput {
   targetMB: number;
 }
 
+export type QualityMetric = "vmaf" | "ssim";
+
+export interface QualityCandidate {
+  targetMB: number;
+  estimatedMB: number;
+  lowBitrateBudget?: boolean;
+  /** 各片段平均分中的最低值；SSIM 的取值范围通常为 0–1。 */
+  lowestScore: number;
+  averageScore: number;
+}
+
+export interface QualityAnalysis {
+  filePath: string;
+  encoder: EncoderKind;
+  metric: QualityMetric;
+  sampleCount: number;
+  sampleDurationSec: number;
+  candidates: QualityCandidate[];
+  recommendedTargetMB: number;
+  meetsHeuristic: boolean;
+}
+
+export interface AnalysisProgress {
+  message: string;
+  completed: number;
+  total: number;
+}
+
 export interface GuardResult {
   ok: boolean;
   reason?: "target_too_large" | "disk_low" | "no_write" | "unsupported";
@@ -41,6 +69,7 @@ export interface ProgressEvent {
   ratio: number;
   percent: number;
   etaSec: number | null;
+  elapsedSec: number;
   message: string;
 }
 
@@ -51,6 +80,8 @@ export interface DoneEvent {
   savedBytes: number;
   encoder: EncoderKind;
   retried: boolean;
+  exceededTarget: boolean;
+  elapsedSec: number;
 }
 
 export interface FailEvent {
@@ -110,6 +141,9 @@ export interface KuaiyayaAPI {
   checkStartGuards(input: StartInput): Promise<GuardResult>;
   startCompress(input: StartInput): Promise<void>;
   cancelCompress(): Promise<void>;
+  analyzeQuality(input: StartInput): Promise<QualityAnalysis>;
+  cancelAnalysis(): Promise<void>;
+  onAnalysisProgress(cb: (e: AnalysisProgress) => void): () => void;
   onCompressProgress(cb: (e: ProgressEvent) => void): () => void;
   onCompressDone(cb: (e: DoneEvent) => void): () => void;
   onCompressFail(cb: (e: FailEvent) => void): () => void;

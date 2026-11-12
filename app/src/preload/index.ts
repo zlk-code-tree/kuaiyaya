@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { KuaiyayaAPI, LicenseState, ProgressEvent, DoneEvent, FailEvent } from "../shared/types";
+import type { KuaiyayaAPI, LicenseState, ProgressEvent, DoneEvent, FailEvent, AnalysisProgress } from "../shared/types";
 
 function on<T>(channel: string, cb: (e: T) => void): () => void {
   const listener = (_event: unknown, payload: T) => cb(payload);
@@ -13,6 +13,9 @@ const api: KuaiyayaAPI = {
   checkStartGuards: (input) => ipcRenderer.invoke("check-start-guards", input),
   startCompress: (input) => ipcRenderer.invoke("start-compress", input),
   cancelCompress: () => ipcRenderer.invoke("cancel-compress"),
+  analyzeQuality: (input) => ipcRenderer.invoke("analyze-quality", input),
+  cancelAnalysis: () => ipcRenderer.invoke("cancel-analysis"),
+  onAnalysisProgress: (cb) => on<AnalysisProgress>("analysis-progress", cb),
   onCompressProgress: (cb) => on<ProgressEvent>("compress-progress", cb),
   onCompressDone: (cb) => on<DoneEvent>("compress-done", cb),
   onCompressFail: (cb) => on<FailEvent>("compress-fail", cb),

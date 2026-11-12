@@ -31,9 +31,9 @@ export function buildCommands(opts: {
     } satisfies BitrateInput);
   const maxrate = Math.floor(bps * 1.1);
   const bufsize = Math.floor(bps * 2);
-  const commonIn = ["-hide_banner", "-y", "-i", opts.input];
+  const commonIn = ["-hide_banner", "-y", "-i", opts.input, "-map", "0:v:0"];
   const audio = opts.probe.hasAudio
-    ? (["-c:a", "aac", "-b:a", "128k"] as string[])
+    ? (["-map", "0:a:0?", "-c:a", "aac", "-b:a", "128k"] as string[])
     : (["-an"] as string[]);
   const mux = ["-tag:v", "hvc1", "-movflags", "+faststart"];
   const progress = ["-progress", "pipe:1", "-nostats"];

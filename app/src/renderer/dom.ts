@@ -29,8 +29,21 @@ export function formatDuration(sec: number): string {
   return `${r}秒`;
 }
 
-export function formatEta(sec: number | null): string {
-  if (sec == null) return "计算剩余时间…";
-  if (sec < 5) return "即将完成";
-  return `大约还要 ${formatDuration(sec)}`;
+export function formatEta(sec: number | null, percent?: number): string {
+  if (sec == null) return "计算预计时间…";
+  // 进度很低时即使估出很短剩余时间，也不提示「即将完成」
+  if (sec < 5 && (percent == null || percent >= 95)) return "即将完成";
+  if (sec < 5) return "计算预计时间…";
+  return `预计剩余 ${formatDuration(sec)}`;
+}
+
+export function formatRemainDetail(elapsedSec: number, etaSec: number | null, percent?: number): string {
+  const remain = formatEta(etaSec, percent);
+  if (etaSec == null || etaSec < 5) return remain;
+  const total = Math.max(0, elapsedSec) + etaSec;
+  return `${remain}（共约 ${formatDuration(total)}）`;
+}
+
+export function formatElapsed(elapsedSec: number): string {
+  return `已用 ${formatDuration(Math.max(0, elapsedSec))}`;
 }

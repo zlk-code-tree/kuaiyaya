@@ -64,7 +64,8 @@ export function isTargetTooLarge(targetMB: number, sizeBytes: number): boolean {
   return targetMB * 1024 * 1024 >= sizeBytes;
 }
 
-export function requiredDiskBytes(targetMB: number): number {
+export function requiredDiskBytes(targetMB: number, sizeBytes?: number): number {
   const target = targetBytesFromMB(targetMB);
-  return target + Math.max(200 * 1024 * 1024, Math.floor(target * 0.2));
+  const basis = sizeBytes != null ? Math.max(target, sizeBytes) : target;
+  return basis + Math.max(200 * 1024 * 1024, Math.floor(basis * 0.2));
 }

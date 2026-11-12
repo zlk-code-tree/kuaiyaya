@@ -68,8 +68,9 @@ describe("retry and exceeds", () => {
 });
 
 describe("disk reserve", () => {
-  it("requires target + max(200MB, 20% of target)", () => {
+  it("requires basis + max(200MB, 20% of basis), using the larger of target and original size", () => {
     expect(requiredDiskBytes(100)).toBe((100 + 200) * 1024 * 1024);
     expect(requiredDiskBytes(2000)).toBe((2000 + 400) * 1024 * 1024);
+    expect(requiredDiskBytes(100, 800 * 1024 * 1024)).toBe((800 + 200) * 1024 * 1024);
   });
 });

@@ -34,5 +34,97 @@
   vertical-align: -2px;
   animation: spin 0.8s linear infinite;
 }
+
+.analysis-summary {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--blue);
+  line-height: 1.45;
+}
+.analysis-dialog { width: 480px; max-height: calc(100% - 40px); overflow: auto; }
+.analysis-dialog p { margin: 8px 0 14px; }
+.analysis-progress { margin: 14px 0 20px; }
+.analysis-results { display: grid; gap: 8px; margin: 12px 0; }
+.analysis-result {
+  padding: 10px 12px;
+  background: #f5f6f8;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.analysis-result strong { display: block; font-size: 13px; color: var(--text); }
+.analysis-dialog .analysis-note { font-size: 11px; line-height: 1.5; text-align: left; }
 @keyframes spin { to { transform: rotate(360deg); } }
 #toast.show { opacity: 1; }
+
+/* 已拍板视觉方案：内容区背景、涟漪、鸭子尺寸与完成点头，不改进度条交互 */
+.duck-xl { width: 96px; height: 96px; }
+
+.body { position: relative; }
+.screen { position: relative; }
+.wash {
+  position: absolute;
+  inset: -24px -36px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+}
+.wash.rich {
+  opacity: 1;
+  background:
+    radial-gradient(420px 240px at 50% 18%, var(--warm-wash), transparent 70%),
+    radial-gradient(280px 180px at 88% 92%, var(--warm-wash-2), transparent 65%);
+}
+.wash.faint {
+  opacity: 1;
+  background: radial-gradient(500px 280px at 50% 0%, rgba(255, 214, 10, 0.04), transparent 70%);
+}
+.screen > *:not(.wash) { position: relative; z-index: 1; }
+
+.dropzone { position: relative; overflow: hidden; }
+.dropzone {
+  border-color: rgba(60, 60, 67, 0.22);
+  background: rgba(255, 255, 255, 0.45);
+}
+.ripple {
+  position: absolute;
+  width: 160px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 159, 10, 0.16);
+  pointer-events: none;
+  top: 42%;
+  left: 50%;
+  margin-left: -80px;
+  margin-top: 28px;
+  animation: ripple 5s ease-out infinite;
+  z-index: 0;
+}
+.ripple.d2 { animation-delay: 1.6s; }
+@keyframes ripple {
+  0% { transform: scale(0.7); opacity: 0.5; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+
+#screen-ready .file-card,
+#screen-work .file-card,
+#screen-ready .panel {
+  padding: 14px 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+#screen-ready .panel { padding: 14px 18px 12px; }
+
+#titleDuck { transform-origin: 50% 80%; }
+#titleDuck.duck-nod { animation: duck-nod 0.55s ease-out 1; }
+@keyframes duck-nod {
+  0%, 100% { transform: rotate(0deg); }
+  40% { transform: rotate(8deg); }
+  70% { transform: rotate(-3deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ripple { animation: none; opacity: 0; }
+  #titleDuck.duck-nod { animation: none; }
+}

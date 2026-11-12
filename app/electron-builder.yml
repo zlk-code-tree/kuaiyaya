@@ -8,15 +8,14 @@ files:
   - out/**/*
   - package.json
 extraResources:
-  - from: resources/ffmpeg/darwin-arm64
-    to: ffmpeg/darwin-arm64
-    filter:
-      - ffmpeg
-      - ffprobe
   - from: resources/assets
     to: assets
 mac:
-  icon: resources/icon.png
+  extraResources:
+    - from: resources/ffmpeg/darwin-arm64
+      to: ffmpeg/darwin-arm64
+      filter: [ffmpeg, ffprobe]
+  icon: resources/icon-duck-realistic.png
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   category: public.app-category.video
   target:
@@ -30,6 +29,16 @@ mac:
   minimumSystemVersion: "13.0"
   extendInfo:
     LSMinimumSystemVersion: "13.0"
+win:
+  icon: resources/icon-duck-realistic.png
+  signAndEditExecutable: false
+  artifactName: ${productName}-${version}-windows-${arch}.${ext}
+  target:
+    - target: zip
+      arch: [x64]
+  extraResources:
+    - from: resources/ffmpeg/win32-x64
+      to: ffmpeg/win32-x64
 asar: true
 asarUnpack: []
 npmRebuild: false

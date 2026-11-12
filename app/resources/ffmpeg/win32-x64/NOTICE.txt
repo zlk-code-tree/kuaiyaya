@@ -1,0 +1,7 @@
+FFmpeg / FFprobe for Windows x64
+FFmpeg: @ffmpeg-installer/win32-x64 4.1.0, build 20181217-f22fcd4
+https://www.npmjs.com/package/@ffmpeg-installer/win32-x64
+FFprobe: @ffprobe-installer/win32-x64 5.1.0, build 20230213-2296078
+https://www.npmjs.com/package/@ffprobe-installer/win32-x64
+These builds are distributed under GPL v3. See COPYING.GPLv3.txt.
+FFmpeg source: https://ffmpeg.org/download.html
