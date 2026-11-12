@@ -1,0 +1,2033 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>快鸭鸭</title>
+  <style>
+    :root {
+      --bg: #e8e8ed;
+      --window: #f6f6f8;
+      --surface: #ffffff;
+      --text: #1d1d1f;
+      --text-secondary: #6e6e73;
+      --text-tertiary: #8e8e93;
+      --line: rgba(60, 60, 67, 0.12);
+      --fill: rgba(120, 120, 128, 0.12);
+      --fill-strong: rgba(120, 120, 128, 0.18);
+      --blue: #007aff;
+      --blue-hover: #0066d6;
+      --blue-soft: rgba(0, 122, 255, 0.12);
+      --green: #34c759;
+      --red: #ff3b30;
+      --orange: #ff9f0a;
+      --yellow: #ffd60a;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background:
+        radial-gradient(1200px 600px at 20% -10%, #dbe7f5 0%, transparent 50%),
+        radial-gradient(900px 500px at 100% 100%, #eadfce 0%, transparent 46%),
+        #b9c0c9;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+        "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 24px;
+      min-height: 100%;
+    }
+
+    button, input { font-family: inherit; }
+
+    .app {
+      width: 740px;
+      height: 640px;
+      background: var(--window);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .titlebar {
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+      background: linear-gradient(180deg, #fbfbfc 0%, #f3f3f5 100%);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .traffic {
+      position: absolute;
+      left: 16px;
+      top: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .traffic span {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: block;
+    }
+
+    .traffic .c { background: #ff5f57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12); }
+    .traffic .m { background: #febc2e; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12); }
+    .traffic .x { background: #28c840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12); }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand h1 {
+      font-size: 13px;
+      font-weight: 590;
+      letter-spacing: 0.01em;
+      color: var(--text);
+    }
+
+    .duck {
+      display: block;
+      flex-shrink: 0;
+    }
+
+    .duck-sm { width: 22px; height: 22px; }
+    .duck-md { width: 64px; height: 64px; }
+    .duck-lg { width: 88px; height: 88px; }
+
+    .title-actions {
+      position: absolute;
+      right: 12px;
+      top: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .title-btn {
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 510;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .title-btn:hover { background: var(--fill); }
+
+    .title-btn.ghost {
+      color: var(--text-secondary);
+      font-weight: 400;
+    }
+
+    .body {
+      flex: 1;
+      padding: 24px 36px 16px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .screen { display: none; flex: 1; flex-direction: column; min-height: 0; }
+    .screen.active { display: flex; }
+
+    .gate {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 8px 24px 16px;
+    }
+
+    .gate h2 { font-size: 22px; font-weight: 620; margin: 12px 0 8px; }
+    .gate .lead {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      max-width: 420px;
+    }
+
+    .key-row {
+      margin-top: 22px;
+      display: flex;
+      gap: 8px;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .key-row input {
+      flex: 1;
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 12px;
+      font-size: 14px;
+      letter-spacing: 0.04em;
+      background: #fff;
+      outline: none;
+      user-select: text;
+    }
+
+    .key-row input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+    }
+
+    .key-row input:disabled { background: #f2f2f7; color: var(--text-secondary); }
+
+    .key-msg {
+      margin-top: 12px;
+      min-height: 20px;
+      font-size: 12px;
+      line-height: 1.5;
+      max-width: 420px;
+    }
+    .key-msg.err { color: #c93400; }
+    .key-msg.info { color: var(--blue); }
+    .key-msg.ok { color: #248a3d; }
+
+    .demo-keys {
+      margin-top: 28px;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      line-height: 1.7;
+      max-width: 460px;
+    }
+
+    .demo-keys code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      background: var(--fill);
+      padding: 1px 5px;
+      border-radius: 4px;
+      color: var(--text-secondary);
+    }
+
+    /* Idle */
+    .dropzone {
+      flex: 1;
+      border: 1.5px dashed rgba(60, 60, 67, 0.28);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.55);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s, transform .15s;
+      min-height: 0;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .dropzone h2 { font-size: 20px; font-weight: 590; }
+    .dropzone p { font-size: 13px; color: var(--text-secondary); }
+    .dropzone .choose {
+      margin-top: 10px;
+      color: var(--blue);
+      font-size: 14px;
+      font-weight: 510;
+    }
+
+    .recent {
+      display: none;
+      margin-top: 12px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .recent.show { display: flex; }
+    .recent .meta { flex: 1; min-width: 0; }
+    .recent .k { font-size: 11px; color: var(--text-secondary); }
+    .recent .v {
+      font-size: 13px;
+      font-weight: 510;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* File card */
+    .file-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+
+    .file-badge {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #ffd60a, #ff9f0a);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .file-badge svg { width: 26px; height: 26px; }
+
+    .file-meta { flex: 1; min-width: 0; }
+    .file-meta .name {
+      font-size: 15px;
+      font-weight: 590;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .file-meta .sub {
+      margin-top: 3px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .linkish {
+      border: 0;
+      background: transparent;
+      color: var(--blue);
+      font-size: 13px;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .linkish:hover { background: var(--blue-soft); }
+
+    .panel {
+      margin-top: 16px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 20px 14px;
+    }
+
+    .panel-label {
+      font-size: 13px;
+      font-weight: 590;
+      margin-bottom: 12px;
+    }
+
+    .target-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      appearance: none;
+      height: 4px;
+      background: var(--fill-strong);
+      border-radius: 4px;
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.25), 0 0 0 0.5px rgba(0,0,0,0.08);
+      cursor: pointer;
+    }
+
+    .mb-field {
+      display: flex;
+      align-items: center;
+      background: #f2f2f7;
+      border-radius: 8px;
+      padding: 0 10px 0 0;
+      border: 1px solid transparent;
+    }
+
+    .mb-field:focus-within {
+      background: #fff;
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+    }
+
+    .mb-field input {
+      width: 76px;
+      border: 0;
+      background: transparent;
+      font-size: 15px;
+      font-weight: 590;
+      padding: 7px 8px 7px 12px;
+      outline: none;
+      text-align: right;
+      user-select: text;
+    }
+
+    .mb-field span { font-size: 13px; color: var(--text-secondary); }
+
+    .hint {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .hint.warn { color: #c93400; }
+    .hint.ok { color: var(--text-secondary); }
+
+    .out-rule {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.55;
+    }
+
+    .banner {
+      display: none;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+      background: #fff4e6;
+      color: #9a5b00;
+      flex-shrink: 0;
+    }
+    .banner.show { display: block; }
+    .banner.alert { background: #fff4e6; color: #9a5b00; }
+    .banner.danger { background: #ffece9; color: #c93400; }
+    .banner .row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+
+    #targetBanner.show { display: block; }
+
+    .actions {
+      margin-top: auto;
+      padding-top: 16px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 510;
+      cursor: pointer;
+      transition: background .12s, opacity .12s;
+    }
+
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn.waiting:disabled { opacity: 1; cursor: wait; }
+
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--blue-hover); }
+
+    .btn-secondary { background: var(--fill-strong); color: var(--text); }
+    .btn-secondary:hover:not(:disabled) { background: rgba(120, 120, 128, 0.28); }
+
+    .btn-danger { background: var(--fill-strong); color: var(--text); }
+    .btn-danger:hover:not(:disabled) { background: rgba(255, 59, 48, 0.12); color: var(--red); }
+
+    .footnote {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      padding: 4px 0 8px;
+      flex-shrink: 0;
+    }
+
+    /* Progress */
+    .progress-head {
+      text-align: center;
+      margin: 8px 0 18px;
+    }
+
+    .progress-head h2 { font-size: 20px; font-weight: 590; }
+    .progress-head p { margin-top: 6px; font-size: 13px; color: var(--text-secondary); }
+
+    .pass {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+    }
+
+    .pass-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .pass-title { font-size: 13px; font-weight: 590; }
+    .pass-status { font-size: 12px; color: var(--text-secondary); }
+    .pass.done .pass-status { color: var(--green); }
+    .pass.active .pass-status { color: var(--blue); }
+
+    .bar {
+      height: 8px;
+      background: var(--fill);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .bar > i {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--blue);
+      border-radius: 8px;
+      transition: width .16s linear;
+    }
+
+    .pass.done .bar > i { background: var(--green); width: 100%; }
+    .pass.waiting .bar > i { width: 0; }
+    .pass.waiting { opacity: 0.7; }
+
+    .eta {
+      margin-top: 16px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    /* Result */
+    .result-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      margin: 4px auto 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .result-icon.ok { background: rgba(52, 199, 89, 0.16); color: var(--green); }
+    .result-icon.err { background: rgba(255, 59, 48, 0.14); color: var(--red); }
+    .result-icon svg { width: 32px; height: 32px; }
+
+    .result-title { text-align: center; font-size: 22px; font-weight: 620; }
+    .result-sub {
+      text-align: center;
+      margin: 8px 0 16px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .stat {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .stat div {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 8px;
+      text-align: center;
+    }
+
+    .stat .k { font-size: 11px; color: var(--text-secondary); }
+    .stat .v { margin-top: 4px; font-size: 16px; font-weight: 620; }
+    .stat .save .v { color: var(--green); }
+
+    .path-box {
+      margin-top: 14px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.55;
+      word-break: break-all;
+    }
+
+    .path-box strong { color: var(--text); font-weight: 590; }
+
+    /* Overlays */
+    .overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.28);
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+    }
+    .overlay.show { display: flex; }
+
+    .dialog, .sheet {
+      width: 360px;
+      background: rgba(255,255,255,0.96);
+      backdrop-filter: blur(20px);
+      border-radius: 14px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+      padding: 22px 22px 18px;
+    }
+
+    .sheet { width: 420px; max-height: 500px; display: flex; flex-direction: column; }
+
+    .dialog h3, .sheet h3 { font-size: 15px; font-weight: 620; text-align: center; }
+    .dialog p {
+      margin: 8px 0 18px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      text-align: center;
+      line-height: 1.55;
+    }
+
+    .dialog-actions { display: flex; gap: 8px; }
+    .dialog-actions .btn { flex: 1; }
+
+    .file-list {
+      margin-top: 14px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .file-item {
+      width: 100%;
+      text-align: left;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+      padding: 10px 12px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .file-item:last-child { border-bottom: 0; }
+    .file-item:hover { background: #f2f2f7; }
+    .file-item .fn { font-size: 13px; font-weight: 510; }
+    .file-item .fs { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+    .file-item .kind { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; align-self: center; }
+
+    .about {
+      width: 400px;
+      max-height: 560px;
+      overflow: auto;
+      text-align: center;
+    }
+
+    .about .duck-lg { margin: 0 auto 6px; }
+    .about h3 { font-size: 20px; margin-top: 2px; }
+    .about .ver { font-size: 12px; color: var(--text-secondary); margin: 4px 0 14px; }
+    .about .who {
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 14px;
+      line-height: 1.6;
+    }
+    .about .who span { color: var(--text-secondary); }
+    .about .block {
+      text-align: left;
+      background: #f7f7f9;
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+    .about .block .lab { font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; }
+    .about .mail {
+      border: 0;
+      background: transparent;
+      color: var(--blue);
+      font-size: 13px;
+      cursor: pointer;
+      padding: 0;
+    }
+    .about .mail:hover { text-decoration: underline; }
+    .about img.qr {
+      display: block;
+      width: 210px;
+      height: auto;
+      margin: 8px auto 0;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .about .note {
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      line-height: 1.5;
+    }
+
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: 28px;
+      transform: translateX(-50%) translateY(12px);
+      background: rgba(30, 30, 32, 0.92);
+      color: #fff;
+      font-size: 13px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s, transform .2s;
+      z-index: 30;
+      max-width: 80%;
+      text-align: center;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .menu {
+      display: none;
+      position: absolute;
+      right: 12px;
+      top: 46px;
+      width: 240px;
+      background: rgba(255,255,255,0.96);
+      backdrop-filter: blur(16px);
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06);
+      padding: 6px;
+      z-index: 25;
+      max-height: 520px;
+      overflow: auto;
+    }
+    .menu.show { display: block; }
+    .menu button {
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: transparent;
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .menu button:hover { background: var(--blue); color: #fff; }
+    .menu .sep {
+      height: 1px;
+      background: var(--line);
+      margin: 5px 6px;
+    }
+    .menu .cap {
+      font-size: 10px;
+      color: var(--text-tertiary);
+      padding: 6px 10px 2px;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255,255,255,0.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: -1px;
+      margin-right: 6px;
+    }
+
+    .spinner.dark {
+      border-color: rgba(0,0,0,0.15);
+      border-top-color: var(--blue);
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <symbol id="duck-logo" viewBox="0 0 64 64">
+      <ellipse cx="32" cy="56.5" rx="14" ry="3" fill="#000" opacity=".12"/>
+      <path d="M14 40c0-10 10-18 22-16 8 1 16 8 16 16 0 9-8 16-20 16s-18-7-18-16z" fill="#FFD60A"/>
+      <path d="M20 40c0-5 5-9 11-8 2 .3 4 2 5 4-6 1-11 4-13 8-1.2-1.2-3-2.5-3-4z" fill="#FFC107"/>
+      <circle cx="42" cy="23" r="13" fill="#FFD60A"/>
+      <path d="M53 23c7.5.5 11 3 10 6.2-1 2.8-5.5 3.5-10.5 3.2-2.2 0-3.5-1.5-3.6-3.3-.2-2.2 1.2-5.5 4.1-6.1z" fill="#FF9F0A"/>
+      <path d="M52 26.2h9" stroke="#F5820D" stroke-width="1" stroke-linecap="round" opacity=".5"/>
+      <circle cx="39.5" cy="21" r="2.3" fill="#1C1C1E"/>
+      <circle cx="40.3" cy="20.3" r=".7" fill="#fff"/>
+    </symbol>
+  </svg>
+
+  <div class="app" id="app">
+    <div class="titlebar">
+      <div class="traffic" title="原型窗口按钮，仅作外观">
+        <span class="c"></span><span class="m"></span><span class="x"></span>
+      </div>
+      <div class="brand">
+        <svg class="duck duck-sm" aria-hidden="true"><use href="#duck-logo"></use></svg>
+        <h1>快鸭鸭</h1>
+      </div>
+      <div class="title-actions">
+        <button class="title-btn" id="aboutBtn" type="button">关于</button>
+        <button class="title-btn ghost" id="demoBtn" type="button">演示状态</button>
+      </div>
+    </div>
+
+    <div class="menu" id="demoMenu">
+      <div class="cap">首次开通</div>
+      <button type="button" data-demo="key-input">输入 Key</button>
+      <button type="button" data-demo="key-checking">首次开通 · 校验中</button>
+      <button type="button" data-demo="key-offline">网络不通</button>
+      <button type="button" data-demo="key-invalid">Key 无效或过期</button>
+      <button type="button" data-demo="key-bound">已绑定其他 Key</button>
+      <div class="sep"></div>
+      <div class="cap">无感校验</div>
+      <button type="button" data-demo="silent-ok">已开通后的静默校验</button>
+      <button type="button" data-demo="start-seamless">开始压缩时无感通过</button>
+      <button type="button" data-demo="start-waiting">开始时按钮短暂等待</button>
+      <button type="button" data-demo="silent-fail-offline">静默失败 · 网络不通出横幅</button>
+      <button type="button" data-demo="silent-fail-expired">静默失败 · Key 过期出横幅</button>
+      <button type="button" data-demo="start-offline">失败后点开始 · 弹出网络不通</button>
+      <button type="button" data-demo="expired-done">Key 过期仍可打开已有文件</button>
+      <div class="sep"></div>
+      <div class="cap">压缩主流程</div>
+      <button type="button" data-demo="idle">空闲（未选文件）</button>
+      <button type="button" data-demo="ready">已选文件 · 可开始</button>
+      <button type="button" data-demo="small">原片已小于目标</button>
+      <button type="button" data-demo="pass1">压缩中 · 第一遍</button>
+      <button type="button" data-demo="pass2">压缩中 · 第二遍</button>
+      <button type="button" data-demo="done">压缩完成</button>
+      <button type="button" data-demo="cancel">已取消</button>
+      <button type="button" data-demo="fail">编码失败</button>
+      <button type="button" data-demo="disk">磁盘空间不足</button>
+    </div>
+
+    <div class="body">
+      <div class="banner alert" id="licenseBanner">
+        <div class="row">
+          <span id="licenseBannerText"></span>
+          <button class="linkish" id="bannerKeyBtn" type="button">重新输入 Key</button>
+        </div>
+      </div>
+
+      <!-- Key gate -->
+      <section class="screen" id="screen-key">
+        <div class="gate">
+          <svg class="duck duck-lg" aria-hidden="true"><use href="#duck-logo"></use></svg>
+          <h2>输入 Key 即可使用</h2>
+          <p class="lead">不需要注册或登录。校验只确认 Key 是否有效，视频仍在本机处理，不会上传。</p>
+          <div class="key-row">
+            <input id="keyInput" type="text" spellcheck="false" autocomplete="off" placeholder="请输入 Key" />
+            <button class="btn btn-primary" id="activateBtn" type="button">开通</button>
+          </div>
+          <div class="key-msg" id="keyMsg"></div>
+          <div class="demo-keys">
+            原型演示用 Key：<code>KYDY-OK-24A8</code> 可通过；
+            <code>KYDY-BAD-9X9X</code> 无效；
+            <code>KYDY-OLD-7C7C</code> 过期；
+            若本机已绑定后再输入 <code>KYDY-NEW-1111</code>，会提示已绑定其他 Key。也可点右上角「演示状态」直接查看各结果。
+          </div>
+        </div>
+      </section>
+
+      <!-- Idle -->
+      <section class="screen" id="screen-idle">
+        <div class="dropzone" id="dropzone" tabindex="0">
+          <svg class="duck duck-md" aria-hidden="true"><use href="#duck-logo"></use></svg>
+          <h2>将视频拖到这里</h2>
+          <p>或点击选择一个本地文件，全部在本机处理</p>
+          <div class="choose">选择视频</div>
+        </div>
+        <div class="recent" id="recentBox">
+          <div class="meta">
+            <div class="k">最近输出，可直接打开</div>
+            <div class="v" id="recentName">—</div>
+          </div>
+          <button class="linkish" id="recentOpenBtn" type="button">打开文件</button>
+          <button class="linkish" id="recentFolderBtn" type="button">打开所在文件夹</button>
+        </div>
+      </section>
+
+      <!-- Ready -->
+      <section class="screen" id="screen-ready">
+        <div class="file-card">
+          <div class="file-badge">
+            <svg viewBox="0 0 24 24"><path fill="#fff" d="M4 4h11l5 5v11a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm10 1.5V10h4.5L14 5.5zM9 13l2.2 2.8L14.2 13 18 18H6l3-5z"/></svg>
+          </div>
+          <div class="file-meta">
+            <div class="name" id="fileName">—</div>
+            <div class="sub" id="fileSub">—</div>
+          </div>
+          <button class="linkish" id="replaceBtn" type="button">更换</button>
+        </div>
+
+        <div class="panel">
+          <div class="panel-label">目标大小</div>
+          <div class="target-row">
+            <input type="range" id="sizeSlider" min="8" max="100" value="50" />
+            <label class="mb-field">
+              <input type="number" id="sizeInput" min="1" step="1" />
+              <span>MB</span>
+            </label>
+          </div>
+          <div class="hint" id="targetHint">—</div>
+          <div class="banner" id="targetBanner">原片已经不大于目标大小，无需压缩。请调低目标后再开始。</div>
+          <div class="out-rule" id="outRule">输出 1080p HEVC（H.265）mp4，带 hvc1 和 faststart。默认与原片保存在同一目录。</div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary" id="startBtn" type="button">开始压缩</button>
+        </div>
+      </section>
+
+      <!-- Compressing -->
+      <section class="screen" id="screen-work">
+        <div class="file-card">
+          <div class="file-badge">
+            <svg viewBox="0 0 24 24"><path fill="#fff" d="M4 4h11l5 5v11a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm10 1.5V10h4.5L14 5.5z"/></svg>
+          </div>
+          <div class="file-meta">
+            <div class="name" id="workName">—</div>
+            <div class="sub" id="workSub">—</div>
+          </div>
+        </div>
+
+        <div class="progress-head">
+          <h2>正在压缩</h2>
+          <p id="workPhase">第一遍：分析画面，为第二遍编码做准备</p>
+        </div>
+
+        <div class="pass active" id="pass1">
+          <div class="pass-top">
+            <div class="pass-title">第一遍  分析画面</div>
+            <div class="pass-status" id="pass1Status">0%</div>
+          </div>
+          <div class="bar"><i id="pass1Bar"></i></div>
+        </div>
+
+        <div class="pass waiting" id="pass2">
+          <div class="pass-top">
+            <div class="pass-title">第二遍  编码输出</div>
+            <div class="pass-status" id="pass2Status">等待中</div>
+          </div>
+          <div class="bar"><i id="pass2Bar"></i></div>
+        </div>
+
+        <div class="eta" id="eta">计算剩余时间…</div>
+
+        <div class="actions">
+          <button class="btn btn-danger" id="cancelBtn" type="button">取消</button>
+        </div>
+      </section>
+
+      <!-- Done -->
+      <section class="screen" id="screen-done">
+        <div class="result-icon ok">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.3 16.3L5.7 12.7l-1.4 1.4 5 5 11-11-1.4-1.4z"/></svg>
+        </div>
+        <div class="result-title">压缩完成</div>
+        <div class="result-sub" id="doneSub">输出文件已保存在原片同一目录</div>
+        <div class="stat">
+          <div><div class="k">原片</div><div class="v" id="statBefore">—</div></div>
+          <div><div class="k">输出</div><div class="v" id="statAfter">—</div></div>
+          <div class="save"><div class="k">减小</div><div class="v" id="statSave">—</div></div>
+        </div>
+        <div class="path-box" id="donePath">—</div>
+        <div class="actions">
+          <button class="btn btn-secondary" id="againBtn" type="button">再压缩一个</button>
+          <button class="btn btn-secondary" id="openFolderBtn" type="button">打开所在文件夹</button>
+          <button class="btn btn-primary" id="openFileBtn" type="button">打开文件</button>
+        </div>
+      </section>
+
+      <!-- Fail -->
+      <section class="screen" id="screen-fail">
+        <div class="result-icon err">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 14h-2v-2h2v2zm0-4h-2V6h2v6z"/></svg>
+        </div>
+        <div class="result-title">压缩失败</div>
+        <div class="result-sub" id="failSub">编码未能完成。原片没有被修改，临时文件已清理。</div>
+        <div class="actions">
+          <button class="btn btn-secondary" id="failHomeBtn" type="button">选择其他文件</button>
+          <button class="btn btn-primary" id="retryBtn" type="button">重试</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="footnote">本机处理，文件不会上传。与服务端的来往只用于校验 Key。</div>
+
+    <div class="overlay" id="pickerOverlay">
+      <div class="sheet">
+        <h3>选择视频</h3>
+        <div class="file-list" id="fileList"></div>
+        <div class="dialog-actions" style="margin-top:14px">
+          <button class="btn btn-secondary" id="pickerCancel" type="button">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay" id="confirmOverlay">
+      <div class="dialog">
+        <h3>确定取消压缩？</h3>
+        <p>压缩还没完成。未完成的临时文件会被清理，原片不会改动。再次开始会从头编码。</p>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" id="confirmNo" type="button">再想想</button>
+          <button class="btn btn-primary" id="confirmYes" type="button">确定取消</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay" id="alertOverlay">
+      <div class="dialog">
+        <h3 id="alertTitle">无法开始压缩</h3>
+        <p id="alertText">磁盘剩余空间不足，无法写入输出文件。请清理空间后再试。</p>
+        <div class="dialog-actions" id="alertActions">
+          <button class="btn btn-primary" id="alertOk" type="button">知道了</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay" id="aboutOverlay">
+      <div class="dialog about">
+        <svg class="duck duck-lg" aria-hidden="true"><use href="#duck-logo"></use></svg>
+        <h3>快鸭鸭</h3>
+        <div class="ver">第一版原型</div>
+        <div class="who"><span>维护者</span><br>黑曼巴的紫金王朝</div>
+        <div class="block">
+          <div class="lab">邮件反馈</div>
+          <button class="mail" id="copyMailBtn" type="button">zhanglikunmamba@gmail.com</button>
+        </div>
+        <div class="block">
+          <div class="lab">微信扫码反馈</div>
+          <img class="qr" src="assets/feedback-wechat-qr.png" alt="快鸭鸭反馈微信二维码" />
+        </div>
+        <div class="note">反馈不用注册或登录。视频压缩全程在本机完成，不会上传。</div>
+        <div class="dialog-actions" style="margin-top:14px">
+          <button class="btn btn-primary" id="aboutClose" type="button">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script>
+    const SAMPLES = [
+      {
+        id: "sunset",
+        name: "旅行_青岛日落.mp4",
+        dir: "/Users/kun/Movies",
+        sizeMB: 786,
+        duration: "08:42",
+        resolution: "3840×2160",
+        kind: "视频 · 4K",
+        behavior: "ok"
+      },
+      {
+        id: "meeting",
+        name: "会议录像_周会.mp4",
+        dir: "/Users/kun/Documents/会议",
+        sizeMB: 128,
+        duration: "45:12",
+        resolution: "1920×1080",
+        kind: "视频 · 1080p",
+        behavior: "ok"
+      },
+      {
+        id: "small",
+        name: "短片_已压缩.mp4",
+        dir: "/Users/kun/Desktop",
+        sizeMB: 36,
+        duration: "01:48",
+        resolution: "1920×1080",
+        kind: "视频 · 较小",
+        behavior: "ok"
+      },
+      {
+        id: "broken",
+        name: "损坏的视频.mp4",
+        dir: "/Users/kun/Downloads",
+        sizeMB: 412,
+        duration: "06:05",
+        resolution: "1920×1080",
+        kind: "视频 · 将在编码时失败",
+        behavior: "fail"
+      },
+      {
+        id: "huge",
+        name: "4K原片_婚礼全程.mp4",
+        dir: "/Users/kun/Movies",
+        sizeMB: 18600,
+        duration: "1:42:20",
+        resolution: "3840×2160",
+        kind: "视频 · 磁盘空间不足",
+        behavior: "disk"
+      },
+      {
+        id: "doc",
+        name: "项目计划.docx",
+        dir: "/Users/kun/Documents",
+        sizeMB: 2,
+        duration: "—",
+        resolution: "—",
+        kind: "文档 · 非视频",
+        behavior: "invalid"
+      }
+    ];
+
+    const DEMO_KEYS = {
+      "KYDY-OK-24A8": "ok",
+      "KYDY-BAD-9X9X": "invalid",
+      "KYDY-OLD-7C7C": "expired",
+      "KYDY-NEW-1111": "other"
+    };
+
+    const state = {
+      file: null,
+      targetMB: 0,
+      timer: null,
+      pass: 0,
+      pausedForConfirm: false,
+      progress: { p1: 0, p2: 0 },
+      cancelledFlag: false,
+      output: null,
+      online: true,
+      license: {
+        status: "none",
+        key: "",
+        boundKey: "",
+        checking: false,
+        silentChecking: false,
+        verified: false,
+        pendingStart: false,
+        silentTimer: null
+      }
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function showScreen(id) {
+      document.querySelectorAll(".screen").forEach((el) => el.classList.toggle("active", el.id === id));
+      syncLicenseBanner();
+      syncRecent();
+    }
+
+    function toast(msg) {
+      const el = $("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove("show"), 2200);
+    }
+
+    function formatMB(n) {
+      if (n >= 1024) {
+        const gb = n / 1024;
+        return (gb >= 10 ? gb.toFixed(1) : gb.toFixed(2)) + " GB";
+      }
+      return Math.round(n) + " MB";
+    }
+
+    function clamp(n, min, max) {
+      return Math.min(max, Math.max(min, n));
+    }
+
+    function rangeFor(file) {
+      const min = Math.max(8, Math.round(file.sizeMB * 0.05));
+      const max = Math.max(min, Math.round(file.sizeMB) - 1);
+      return { min, max };
+    }
+
+    function defaultTarget(file) {
+      const { min, max } = rangeFor(file);
+      return clamp(Math.round(file.sizeMB * 0.5), min, max);
+    }
+
+    function outputName(file) {
+      const base = file.name.replace(/\.[^.]+$/, "");
+      return base + "_1080p.mp4";
+    }
+
+    function currentScreen() {
+      const el = document.querySelector(".screen.active");
+      return el ? el.id : "";
+    }
+
+    function canCompress() {
+      return state.online && state.license.status === "valid";
+    }
+
+    function syncLicenseBanner() {
+      const banner = $("licenseBanner");
+      const text = $("licenseBannerText");
+      const btn = $("bannerKeyBtn");
+      const screen = currentScreen();
+      if (screen === "screen-key" || screen === "screen-work") {
+        banner.classList.remove("show");
+        return;
+      }
+      if (!state.online && (state.license.status === "valid" || state.license.status === "expired" || state.license.status === "none")) {
+        banner.className = "banner alert show";
+        text.textContent = "当前网络不通，无法校验 Key，暂时不能开始压缩。你仍可查看或打开已有文件。";
+        btn.style.display = "none";
+        return;
+      }
+      if (state.license.status === "expired") {
+        banner.className = "banner danger show";
+        text.textContent = "当前 Key 已过期，不能开始压缩。你仍可查看或打开已有文件。";
+        btn.style.display = "";
+        return;
+      }
+      if (state.license.status === "none" && screen !== "screen-key") {
+        banner.className = "banner alert show";
+        text.textContent = "尚未开通，不能开始压缩。输入 Key 后即可使用。";
+        btn.textContent = "输入 Key";
+        btn.style.display = "";
+        return;
+      }
+      banner.classList.remove("show");
+      btn.textContent = "重新输入 Key";
+    }
+
+    function syncRecent() {
+      const box = $("recentBox");
+      if (!$("screen-idle").classList.contains("active") || !state.output) {
+        box.classList.remove("show");
+        return;
+      }
+      $("recentName").textContent = state.output.name;
+      box.classList.add("show");
+    }
+
+    function setKeyChecking(on, label) {
+      state.license.checking = on;
+      const btn = $("activateBtn");
+      const input = $("keyInput");
+      input.disabled = on;
+      btn.disabled = on;
+      if (on) {
+        btn.innerHTML = '<span class="spinner"></span>' + (label || "校验中…");
+        setKeyMsg("info", "正在校验 Key…");
+      } else {
+        btn.textContent = "开通";
+      }
+    }
+
+    function setKeyMsg(type, text) {
+      const el = $("keyMsg");
+      el.className = "key-msg" + (type ? " " + type : "");
+      el.textContent = text || "";
+    }
+
+    const LICENSE_STORE = "kuaiyaya-license";
+
+    function persistLicense() {
+      try {
+        sessionStorage.setItem(LICENSE_STORE, JSON.stringify({
+          key: state.license.key,
+          boundKey: state.license.boundKey,
+          status: state.license.status
+        }));
+      } catch (e) {}
+    }
+
+    function loadPersistedLicense() {
+      try {
+        const raw = sessionStorage.getItem(LICENSE_STORE);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    }
+
+    function clearPersistedLicense() {
+      try { sessionStorage.removeItem(LICENSE_STORE); } catch (e) {}
+    }
+
+    function stopSilentTimer() {
+      if (state.license.silentTimer) {
+        clearTimeout(state.license.silentTimer);
+        state.license.silentTimer = null;
+      }
+      state.license.silentChecking = false;
+    }
+
+    function cancelSilentCheck() {
+      stopSilentTimer();
+      state.license.pendingStart = false;
+      setStartWaiting(false);
+    }
+
+    function setStartWaiting(on) {
+      const btn = $("startBtn");
+      if (!btn) return;
+      if (on) {
+        btn.classList.add("waiting");
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span>请稍候…';
+      } else {
+        btn.classList.remove("waiting");
+        btn.textContent = "开始压缩";
+        btn.disabled = !!(state.file && state.targetMB >= state.file.sizeMB);
+      }
+    }
+
+    function startSilentCheck(opts = {}) {
+      if (!state.license.boundKey) return;
+      stopSilentTimer();
+      state.license.silentChecking = true;
+      state.license.verified = false;
+      const delay = opts.delay != null ? opts.delay : 1100;
+      const outcome = opts.outcome || (!state.online ? "offline" : (DEMO_KEYS[state.license.boundKey] === "expired" ? "expired" : "ok"));
+      state.license.silentTimer = setTimeout(() => finishSilentCheck(outcome), delay);
+    }
+
+    function finishSilentCheck(outcome) {
+      state.license.silentTimer = null;
+      state.license.silentChecking = false;
+      if (outcome === "ok") {
+        state.online = true;
+        state.license.status = "valid";
+        state.license.verified = true;
+        persistLicense();
+      } else if (outcome === "offline") {
+        state.online = false;
+        state.license.verified = false;
+      } else if (outcome === "expired" || outcome === "invalid") {
+        state.license.status = "expired";
+        state.license.verified = false;
+        persistLicense();
+      }
+      syncLicenseBanner();
+      if (state.license.pendingStart) {
+        state.license.pendingStart = false;
+        setStartWaiting(false);
+        startCompress();
+      }
+    }
+
+    function openKeyScreen(opts = {}) {
+      const input = $("keyInput");
+      input.value = opts.key || state.license.key || "";
+      setKeyChecking(false);
+      if (opts.freezeChecking) {
+        setKeyChecking(true);
+      } else if (opts.message) {
+        setKeyMsg(opts.messageType || "err", opts.message);
+      } else {
+        setKeyMsg("", "");
+      }
+      showScreen("screen-key");
+      if (!opts.freezeChecking) setTimeout(() => input.focus(), 30);
+    }
+
+    function goHomeAfterLicense() {
+      if (state.file) renderReady();
+      else showScreen("screen-idle");
+    }
+
+    function applyKeyResult(code, typed) {
+      setKeyChecking(false);
+      if (code === "offline") {
+        setKeyMsg("err", "网络不通，暂时连不上服务端。请检查网络后再试。");
+        return;
+      }
+      if (code === "bound") {
+        setKeyMsg("err", "本机已匹配其他 Key。如需更换，请联系管理员先解绑当前绑定。");
+        return;
+      }
+      if (code === "invalid" || code === "expired") {
+        if (code === "expired" && (!state.license.boundKey || state.license.boundKey === typed)) {
+          state.license.status = "expired";
+          state.license.key = typed;
+        }
+        setKeyMsg("err", "Key 无效或已过期。请确认 Key 后重试，或更换有效 Key。");
+        return;
+      }
+      if (code === "ok") {
+        state.license.status = "valid";
+        state.license.key = typed;
+        state.license.boundKey = typed;
+        state.license.verified = true;
+        persistLicense();
+        setKeyMsg("ok", "已开通，可以开始压缩。");
+        setTimeout(() => {
+          goHomeAfterLicense();
+          toast("已开通");
+        }, 400);
+      }
+    }
+
+    function resolveTypedKey(raw) {
+      const typed = (raw || "").trim().toUpperCase();
+      if (!typed) return { error: "empty" };
+      if (!state.online) return { code: "offline", typed };
+      const known = DEMO_KEYS[typed];
+      if (state.license.boundKey && typed !== state.license.boundKey) {
+        return { code: "bound", typed };
+      }
+      if (known === "ok") return { code: "ok", typed };
+      if (known === "expired") return { code: "expired", typed };
+      if (known === "invalid") return { code: "invalid", typed };
+      if (known === "other") {
+        if (state.license.boundKey && typed !== state.license.boundKey) return { code: "bound", typed };
+        return { code: "bound", typed };
+      }
+      return { code: "invalid", typed };
+    }
+
+    function submitKey(opts = {}) {
+      if (state.license.checking && !opts.force) return;
+      const raw = $("keyInput").value;
+      const result = resolveTypedKey(raw);
+      if (result.error === "empty") {
+        setKeyMsg("err", "请输入 Key。");
+        return;
+      }
+      if (opts.instant) {
+        applyKeyResult(result.code, result.typed);
+        return;
+      }
+      setKeyChecking(true);
+      setTimeout(() => applyKeyResult(result.code, result.typed), 900);
+    }
+
+    function showLicenseAlert(kind) {
+      const actions = $("alertActions");
+      if (kind === "offline") {
+        $("alertTitle").textContent = "网络不通";
+        $("alertText").textContent = "网络不通，无法校验 Key，暂时不能开始压缩。请连网后再试。这不是 Key 无效或过期，也不是编码失败。";
+        actions.innerHTML = '<button class="btn btn-primary" id="alertOk" type="button">知道了</button>';
+      } else if (kind === "expired" || kind === "invalid") {
+        $("alertTitle").textContent = "Key 无效或已过期";
+        $("alertText").textContent = "当前 Key 无效或已过期，不能开始压缩。你仍可查看或打开已有文件。重新输入有效 Key 后即可继续压缩。";
+        actions.innerHTML =
+          '<button class="btn btn-secondary" id="alertOk" type="button">稍后再说</button>' +
+          '<button class="btn btn-primary" id="alertRekey" type="button">重新输入 Key</button>';
+      } else if (kind === "none") {
+        $("alertTitle").textContent = "尚未开通";
+        $("alertText").textContent = "输入有效 Key 后才能开始压缩。不需要注册或登录。";
+        actions.innerHTML =
+          '<button class="btn btn-secondary" id="alertOk" type="button">稍后再说</button>' +
+          '<button class="btn btn-primary" id="alertRekey" type="button">输入 Key</button>';
+      }
+      $("alertOverlay").classList.add("show");
+      $("alertOk") && $("alertOk").addEventListener("click", closeAlert);
+      const rekey = $("alertRekey");
+      if (rekey) rekey.addEventListener("click", () => { closeAlert(); openKeyScreen(); });
+    }
+
+    function closeAlert() {
+      $("alertOverlay").classList.remove("show");
+    }
+
+    function licenseBlocksStart() {
+      if (!state.online) {
+        showLicenseAlert("offline");
+        return true;
+      }
+      if (state.license.status === "none") {
+        showLicenseAlert("none");
+        return true;
+      }
+      if (state.license.status !== "valid") {
+        showLicenseAlert("expired");
+        return true;
+      }
+      return false;
+    }
+
+    function renderReady() {
+      const file = state.file;
+      $("fileName").textContent = file.name;
+      $("fileSub").textContent = formatMB(file.sizeMB) + "  ·  " + file.duration + "  ·  " + file.resolution;
+      $("outRule").textContent =
+        "输出 1080p HEVC（H.265）mp4，带 hvc1 和 faststart。将保存为「" +
+        file.dir + "/" + outputName(file) + "」。";
+
+      const { min, max } = rangeFor(file);
+      const slider = $("sizeSlider");
+      const input = $("sizeInput");
+      slider.min = min;
+      slider.max = Math.round(file.sizeMB);
+      slider.value = state.targetMB;
+      input.min = min;
+      input.max = Math.round(file.sizeMB);
+      input.value = state.targetMB;
+      updateTargetHint();
+      showScreen("screen-ready");
+    }
+
+    function updateTargetHint() {
+      const file = state.file;
+      if (!file) return;
+      const t = state.targetMB;
+      const pct = Math.round((t / file.sizeMB) * 100);
+      const tooBig = t >= file.sizeMB;
+      $("targetBanner").classList.toggle("show", tooBig);
+      $("startBtn").disabled = tooBig;
+      if (tooBig) {
+        $("targetHint").className = "hint warn";
+        $("targetHint").textContent = "目标已不小于原片 " + formatMB(file.sizeMB);
+      } else {
+        const saved = file.sizeMB - t;
+        $("targetHint").className = "hint ok";
+        $("targetHint").textContent =
+          "约为原大小的 " + pct + "%，若达到目标约可节省 " + formatMB(saved);
+      }
+    }
+
+    function setTarget(value, from) {
+      const file = state.file;
+      if (!file) return;
+      let n = Number(value);
+      if (!Number.isFinite(n)) return;
+      n = Math.round(n);
+      const hardMax = Math.round(file.sizeMB);
+      const { min } = rangeFor(file);
+      if (from === "blur") n = clamp(n, min, hardMax);
+      n = clamp(n, 1, hardMax);
+      state.targetMB = n;
+      $("sizeSlider").value = n;
+      if (from !== "input-typing") $("sizeInput").value = n;
+      updateTargetHint();
+    }
+
+    function openPicker() {
+      $("pickerOverlay").classList.add("show");
+    }
+
+    function closePicker() {
+      $("pickerOverlay").classList.remove("show");
+    }
+
+    function acceptFile(file, opts = {}) {
+      state.file = file;
+      state.cancelledFlag = false;
+      if (opts.clearOutput) state.output = null;
+      if (opts.forceTarget != null) state.targetMB = opts.forceTarget;
+      else state.targetMB = defaultTarget(file);
+      renderReady();
+      if (opts.note) toast(opts.note);
+    }
+
+    function trySelect(file) {
+      closePicker();
+      if (file.behavior === "invalid") {
+        toast("不支持此文件，请选择视频");
+        return;
+      }
+      acceptFile(file);
+    }
+
+    function stopTimer() {
+      if (state.timer) {
+        clearInterval(state.timer);
+        state.timer = null;
+      }
+    }
+
+    function resetPassUI() {
+      state.progress = { p1: 0, p2: 0 };
+      state.pass = 1;
+      $("pass1").className = "pass active";
+      $("pass2").className = "pass waiting";
+      $("pass1Status").textContent = "0%";
+      $("pass2Status").textContent = "等待中";
+      $("pass1Bar").style.width = "0%";
+      $("pass2Bar").style.width = "0%";
+      $("workPhase").textContent = "第一遍：分析画面，为第二遍编码做准备";
+      $("eta").textContent = "计算剩余时间…";
+    }
+
+    function startCompress(opts = {}) {
+      const file = state.file;
+      if (!file) return;
+      if (state.targetMB >= file.sizeMB) {
+        updateTargetHint();
+        return;
+      }
+      const begin = () => {
+        $("workName").textContent = file.name;
+        $("workSub").textContent =
+          "目标 " + formatMB(state.targetMB) + "  ·  " + file.duration + "  ·  " + file.resolution;
+        resetPassUI();
+        showScreen("screen-work");
+
+        if (opts.jumpTo === "pass2") {
+          finishPass1();
+          state.progress.p2 = 42;
+          updatePass2(42);
+        } else if (opts.jumpTo === "pass1") {
+          state.progress.p1 = 36;
+          updatePass1(36);
+        }
+
+        const failAt = file.behavior === "fail" ? 58 : null;
+        runLoop(failAt);
+      };
+
+      const afterLicense = () => {
+        if (file.behavior === "disk" && !opts.skipDiskCheck) {
+          $("alertTitle").textContent = "磁盘空间不足";
+          $("alertText").textContent =
+            "开始压缩需要约 " + formatMB(state.targetMB + Math.max(200, state.targetMB * 0.2)) +
+            " 的可用空间（含安全余量），当前磁盘空间不足。请清理后再试。原片不会被修改。";
+          $("alertActions").innerHTML = '<button class="btn btn-primary" id="alertOk" type="button">知道了</button>';
+          $("alertOk").addEventListener("click", closeAlert);
+          $("alertOverlay").classList.add("show");
+          return;
+        }
+        begin();
+      };
+
+      if (opts.skipLicense) {
+        afterLicense();
+        return;
+      }
+
+      // Known failures are visible; do not wait, do not return to the key page.
+      if (!state.online || state.license.status === "none" || (state.license.status !== "valid" && !state.license.silentChecking)) {
+        if (licenseBlocksStart()) return;
+      }
+
+      // Silent check already passed: start immediately, no dialog.
+      if (state.license.verified && state.license.status === "valid" && state.online) {
+        afterLicense();
+        return;
+      }
+
+      // Background check still running, or not started yet: wait on the button only.
+      state.license.pendingStart = true;
+      setStartWaiting(true);
+      if (!state.license.silentChecking) startSilentCheck();
+    }
+
+    function updatePass1(p) {
+      $("pass1Status").textContent = p + "%";
+      $("pass1Bar").style.width = p + "%";
+      $("eta").textContent = p < 12 ? "计算剩余时间…" : "大约还要 1 分 " + String(40 - Math.round(p * 0.3)).padStart(2, "0") + " 秒";
+    }
+
+    function finishPass1() {
+      state.pass = 2;
+      $("pass1").className = "pass done";
+      $("pass1Status").textContent = "已完成";
+      $("pass1Bar").style.width = "100%";
+      $("pass2").className = "pass active";
+      $("pass2Status").textContent = "0%";
+      $("workPhase").textContent = "第二遍：按目标大小编码为 1080p HEVC";
+    }
+
+    function updatePass2(p) {
+      $("pass2Status").textContent = p + "%";
+      $("pass2Bar").style.width = p + "%";
+      const remain = Math.max(8, 70 - Math.round(p * 0.6));
+      $("eta").textContent = "大约还要 " + remain + " 秒";
+    }
+
+    function runLoop(failAt) {
+      stopTimer();
+      state.timer = setInterval(() => {
+        if (state.pausedForConfirm) return;
+        if (state.pass === 1) {
+          state.progress.p1 = Math.min(100, state.progress.p1 + 2);
+          if (failAt != null && state.progress.p1 >= failAt) {
+            stopTimer();
+            showFail("无法解析这支视频，编码在第一遍分析时中断。原片没有被修改，临时文件已清理。");
+            return;
+          }
+          updatePass1(state.progress.p1);
+          if (state.progress.p1 >= 100) finishPass1();
+        } else {
+          state.progress.p2 = Math.min(100, state.progress.p2 + 2);
+          updatePass2(state.progress.p2);
+          if (state.progress.p2 >= 100) {
+            stopTimer();
+            showDone();
+          }
+        }
+      }, 90);
+    }
+
+    function showFail(text) {
+      $("failSub").textContent = text;
+      showScreen("screen-fail");
+    }
+
+    function fillDone() {
+      const file = state.file;
+      const outMB = Math.max(rangeFor(file).min, Math.round(state.targetMB * (0.92 + Math.random() * 0.08)));
+      const saved = Math.max(0, file.sizeMB - outMB);
+      const pct = Math.round((saved / file.sizeMB) * 100);
+      const out = outputName(file);
+      state.output = { name: out, path: file.dir + "/" + out, sizeMB: outMB };
+      $("doneSub").textContent = out + " 已保存";
+      $("statBefore").textContent = formatMB(file.sizeMB);
+      $("statAfter").textContent = formatMB(outMB);
+      $("statSave").textContent = formatMB(saved) + "（" + pct + "%）";
+      $("donePath").innerHTML = "<strong>保存位置</strong><br>" + file.dir + "/" + out;
+    }
+
+    function showDone() {
+      fillDone();
+      showScreen("screen-done");
+    }
+
+    function openOutputFile() {
+      if (!state.output) {
+        toast("文件已不在原位置");
+        return;
+      }
+      toast("已请求打开文件（原型模拟）：" + state.output.name);
+    }
+
+    function openOutputFolder() {
+      if (!state.output) {
+        toast("文件已不在原位置");
+        return;
+      }
+      toast("已请求打开所在文件夹（原型模拟）");
+    }
+
+    function cancelConfirmed() {
+      stopTimer();
+      state.pausedForConfirm = false;
+      $("confirmOverlay").classList.remove("show");
+      state.cancelledFlag = true;
+      renderReady();
+      toast("已取消压缩，可以调整目标后重新开始");
+    }
+
+    function setLicensedOk(opts = {}) {
+      cancelSilentCheck();
+      state.online = true;
+      state.license = {
+        status: "valid",
+        key: "KYDY-OK-24A8",
+        boundKey: "KYDY-OK-24A8",
+        checking: false,
+        silentChecking: false,
+        verified: opts.verified !== false,
+        pendingStart: false,
+        silentTimer: null
+      };
+      persistLicense();
+    }
+
+    function resetOverlays() {
+      stopTimer();
+      cancelSilentCheck();
+      state.pausedForConfirm = false;
+      $("confirmOverlay").classList.remove("show");
+      closeAlert();
+      closePicker();
+      $("aboutOverlay").classList.remove("show");
+      setKeyChecking(false);
+    }
+
+    /* Events */
+    $("dropzone").addEventListener("click", openPicker);
+    $("dropzone").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPicker(); }
+    });
+    $("replaceBtn").addEventListener("click", openPicker);
+    $("pickerCancel").addEventListener("click", closePicker);
+    $("pickerOverlay").addEventListener("click", (e) => {
+      if (e.target === $("pickerOverlay")) closePicker();
+    });
+
+    ["dropzone", "app"].forEach((id) => {
+      const el = $(id);
+      el.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        if ($("screen-idle").classList.contains("active")) $("dropzone").classList.add("dragover");
+      });
+      el.addEventListener("dragleave", () => $("dropzone").classList.remove("dragover"));
+      el.addEventListener("drop", (e) => {
+        e.preventDefault();
+        $("dropzone").classList.remove("dragover");
+        if ($("screen-work").classList.contains("active")) {
+          toast("正在压缩，完成后才能更换文件");
+          return;
+        }
+        if ($("screen-key").classList.contains("active")) return;
+        const dropped = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!dropped) return;
+        const name = dropped.name;
+        const ext = (name.split(".").pop() || "").toLowerCase();
+        const videoExt = ["mp4", "mov", "mkv", "avi", "m4v", "webm", "mpeg", "mpg"];
+        if (!videoExt.includes(ext)) {
+          toast("不支持此文件，请选择视频");
+          return;
+        }
+        const sizeMB = Math.max(1, Math.round((dropped.size || 200 * 1024 * 1024) / (1024 * 1024)));
+        acceptFile({
+          id: "local",
+          name,
+          dir: "/Users/kun/Downloads",
+          sizeMB,
+          duration: "06:20",
+          resolution: "1920×1080",
+          kind: "视频",
+          behavior: "ok"
+        });
+      });
+    });
+
+    $("sizeSlider").addEventListener("input", (e) => setTarget(e.target.value, "slider"));
+    $("sizeInput").addEventListener("input", (e) => setTarget(e.target.value, "input-typing"));
+    $("sizeInput").addEventListener("change", (e) => setTarget(e.target.value, "blur"));
+    $("sizeInput").addEventListener("blur", (e) => setTarget(e.target.value, "blur"));
+
+    $("startBtn").addEventListener("click", () => startCompress());
+    $("cancelBtn").addEventListener("click", () => {
+      state.pausedForConfirm = true;
+      $("confirmOverlay").classList.add("show");
+    });
+    $("confirmNo").addEventListener("click", () => {
+      state.pausedForConfirm = false;
+      $("confirmOverlay").classList.remove("show");
+    });
+    $("confirmYes").addEventListener("click", cancelConfirmed);
+
+    $("openFileBtn").addEventListener("click", openOutputFile);
+    $("openFolderBtn").addEventListener("click", openOutputFolder);
+    $("recentOpenBtn").addEventListener("click", openOutputFile);
+    $("recentFolderBtn").addEventListener("click", openOutputFolder);
+    $("againBtn").addEventListener("click", () => {
+      state.file = null;
+      showScreen("screen-idle");
+    });
+    $("retryBtn").addEventListener("click", () => {
+      if (state.file && state.file.behavior === "fail") {
+        state.file = { ...state.file, behavior: "ok" };
+      }
+      startCompress();
+    });
+    $("failHomeBtn").addEventListener("click", () => {
+      state.file = null;
+      showScreen("screen-idle");
+    });
+    $("alertOverlay").addEventListener("click", (e) => {
+      if (e.target === $("alertOverlay") && !$("alertActions").querySelector("[disabled]")) closeAlert();
+    });
+
+    $("activateBtn").addEventListener("click", () => submitKey());
+    $("keyInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") submitKey();
+    });
+    $("bannerKeyBtn").addEventListener("click", () => openKeyScreen());
+
+    $("aboutBtn").addEventListener("click", () => $("aboutOverlay").classList.add("show"));
+    $("aboutClose").addEventListener("click", () => $("aboutOverlay").classList.remove("show"));
+    $("aboutOverlay").addEventListener("click", (e) => {
+      if (e.target === $("aboutOverlay")) $("aboutOverlay").classList.remove("show");
+    });
+    $("copyMailBtn").addEventListener("click", async () => {
+      const mail = "zhanglikunmamba@gmail.com";
+      try { await navigator.clipboard.writeText(mail); } catch (e) {}
+      toast("已复制邮箱 zhanglikunmamba@gmail.com");
+    });
+
+    $("demoBtn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      $("demoMenu").classList.toggle("show");
+    });
+    document.addEventListener("click", () => $("demoMenu").classList.remove("show"));
+    $("demoMenu").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-demo]");
+      if (!btn) return;
+      const demo = btn.dataset.demo;
+      $("demoMenu").classList.remove("show");
+      resetOverlays();
+
+      const sunset = SAMPLES[0];
+      const small = SAMPLES[2];
+      const broken = SAMPLES[3];
+      const huge = SAMPLES[4];
+
+      if (demo === "key-input") {
+        clearPersistedLicense();
+        state.online = true;
+        state.file = null;
+        state.license = { status: "none", key: "", boundKey: "", checking: false, silentChecking: false, verified: false, pendingStart: false, silentTimer: null };
+        openKeyScreen();
+      } else if (demo === "key-checking") {
+        clearPersistedLicense();
+        state.online = true;
+        state.license = { status: "none", key: "KYDY-OK-24A8", boundKey: "", checking: true, silentChecking: false, verified: false, pendingStart: false, silentTimer: null };
+        openKeyScreen({ key: "KYDY-OK-24A8", freezeChecking: true });
+      } else if (demo === "key-offline") {
+        clearPersistedLicense();
+        state.online = false;
+        state.license = { status: "none", key: "KYDY-OK-24A8", boundKey: "", checking: false, silentChecking: false, verified: false, pendingStart: false, silentTimer: null };
+        openKeyScreen({ key: "KYDY-OK-24A8", messageType: "err", message: "网络不通，暂时连不上服务端。请检查网络后再试。" });
+      } else if (demo === "key-invalid") {
+        clearPersistedLicense();
+        state.online = true;
+        state.license = { status: "none", key: "KYDY-OLD-7C7C", boundKey: "", checking: false, silentChecking: false, verified: false, pendingStart: false, silentTimer: null };
+        openKeyScreen({ key: "KYDY-OLD-7C7C", messageType: "err", message: "Key 无效或已过期。请确认 Key 后重试，或更换有效 Key。" });
+      } else if (demo === "key-bound") {
+        setLicensedOk();
+        openKeyScreen({ key: "KYDY-NEW-1111", messageType: "err", message: "本机已匹配其他 Key。如需更换，请联系管理员先解绑当前绑定。" });
+      } else if (demo === "silent-ok") {
+        setLicensedOk({ verified: false });
+        state.file = null;
+        showScreen("screen-idle");
+        startSilentCheck({ delay: 1200, outcome: "ok" });
+      } else if (demo === "start-seamless") {
+        setLicensedOk();
+        acceptFile(sunset);
+        startCompress();
+      } else if (demo === "start-waiting") {
+        setLicensedOk({ verified: false });
+        acceptFile(sunset);
+        startSilentCheck({ delay: 1400, outcome: "ok" });
+        startCompress();
+      } else if (demo === "silent-fail-offline") {
+        setLicensedOk({ verified: false });
+        state.file = null;
+        showScreen("screen-idle");
+        startSilentCheck({ delay: 1100, outcome: "offline" });
+      } else if (demo === "silent-fail-expired") {
+        setLicensedOk({ verified: false });
+        state.file = sunset;
+        state.targetMB = defaultTarget(sunset);
+        fillDone();
+        showScreen("screen-done");
+        startSilentCheck({ delay: 1100, outcome: "expired" });
+      } else if (demo === "start-offline") {
+        setLicensedOk();
+        state.online = false;
+        state.license.verified = false;
+        acceptFile(sunset);
+        showLicenseAlert("offline");
+      } else if (demo === "expired-done") {
+        state.online = true;
+        state.license = { status: "expired", key: "KYDY-OLD-7C7C", boundKey: "KYDY-OLD-7C7C", checking: false, silentChecking: false, verified: false, pendingStart: false, silentTimer: null };
+        persistLicense();
+        state.file = sunset;
+        state.targetMB = defaultTarget(sunset);
+        fillDone();
+        showScreen("screen-done");
+      } else if (demo === "idle") {
+        setLicensedOk();
+        state.file = null;
+        showScreen("screen-idle");
+      } else if (demo === "ready") {
+        setLicensedOk();
+        acceptFile(sunset);
+      } else if (demo === "small") {
+        setLicensedOk();
+        acceptFile(small, { forceTarget: small.sizeMB });
+      } else if (demo === "pass1") {
+        setLicensedOk();
+        acceptFile(sunset);
+        startCompress({ jumpTo: "pass1", skipLicense: true });
+      } else if (demo === "pass2") {
+        setLicensedOk();
+        acceptFile(sunset);
+        startCompress({ jumpTo: "pass2", skipLicense: true });
+      } else if (demo === "done") {
+        setLicensedOk();
+        acceptFile(sunset);
+        showDone();
+      } else if (demo === "cancel") {
+        setLicensedOk();
+        acceptFile(sunset);
+        toast("已取消压缩，可以调整目标后重新开始");
+      } else if (demo === "fail") {
+        setLicensedOk();
+        acceptFile(broken);
+        showFail("无法解析这支视频，编码在第一遍分析时中断。原片没有被修改，临时文件已清理。");
+      } else if (demo === "disk") {
+        setLicensedOk();
+        acceptFile(huge);
+        startCompress({ skipLicense: true });
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if ($("confirmOverlay").classList.contains("show")) {
+          state.pausedForConfirm = false;
+          $("confirmOverlay").classList.remove("show");
+        } else if ($("aboutOverlay").classList.contains("show")) {
+          $("aboutOverlay").classList.remove("show");
+        } else if ($("alertOverlay").classList.contains("show") && !$("alertActions").querySelector("[disabled]")) {
+          closeAlert();
+        } else if ($("pickerOverlay").classList.contains("show")) {
+          closePicker();
+        } else if ($("demoMenu").classList.contains("show")) {
+          $("demoMenu").classList.remove("show");
+        }
+      }
+    });
+
+    (function buildPicker() {
+      const list = $("fileList");
+      SAMPLES.forEach((file) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "file-item";
+        btn.innerHTML =
+          '<div><div class="fn"></div><div class="fs"></div></div><div class="kind"></div>';
+        btn.querySelector(".fn").textContent = file.name;
+        btn.querySelector(".fs").textContent = formatMB(file.sizeMB) + (file.duration !== "—" ? "  ·  " + file.duration : "");
+        btn.querySelector(".kind").textContent = file.kind;
+        btn.addEventListener("click", () => trySelect(file));
+        list.appendChild(btn);
+      });
+    })();
+
+    (function boot() {
+      const saved = loadPersistedLicense();
+      if (saved && saved.boundKey) {
+        state.license.key = saved.key || saved.boundKey;
+        state.license.boundKey = saved.boundKey;
+        state.license.status = saved.status === "expired" ? "expired" : "valid";
+        state.license.verified = false;
+        showScreen("screen-idle");
+        if (state.license.status === "expired") syncLicenseBanner();
+        else startSilentCheck({ delay: 1000 });
+      } else {
+        openKeyScreen();
+      }
+    })();
+  </script>
+</body>
+</html>
