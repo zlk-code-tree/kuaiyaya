@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>快鸭鸭 · Key 管理</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif; color: #1d1d1f; }
+    body { margin: 0; background: #f6f6f8; }
+    header { background: #fff; border-bottom: 1px solid rgba(60,60,67,.12); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+    h1 { font-size: 18px; margin: 0; }
+    main { max-width: 1080px; margin: 24px auto; padding: 0 16px 48px; }
+    .card { background: #fff; border-radius: 10px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    label { display: block; font-size: 12px; color: #6e6e73; margin-bottom: 4px; }
+    input, select, button { font: inherit; }
+    input, select { padding: 8px 10px; border: 1px solid rgba(60,60,67,.2); border-radius: 8px; width: 100%; box-sizing: border-box; }
+    .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
+    button, .btn { appearance: none; border: 0; background: #007aff; color: #fff; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+    button.secondary, .btn.secondary { background: #eee; color: #1d1d1f; }
+    button.danger, .btn.danger { background: #ff3b30; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid rgba(60,60,67,.12); vertical-align: top; }
+    code { font-size: 12px; }
+    .muted { color: #6e6e73; }
+    .flash { background: #e8f5e9; color: #1b5e20; padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; }
+    .flash.err { background: #ffebee; color: #b71c1c; }
+    .login { max-width: 360px; margin: 80px auto; }
+    .actions form { display: inline; }
+    .tag { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 11px; background: #eee; }
+    .tag.ok { background: #e8f5e9; color: #1b5e20; }
+    .tag.warn { background: #fff3e0; color: #e65100; }
+    .tag.bad { background: #ffebee; color: #b71c1c; }
+  </style>
+</head>
+<body>
+  {{if .Authed}}
+  <header>
+    <h1>快鸭鸭 · Key 管理</h1>
+    <form method="post" action="/admin/logout"><button class="secondary" type="submit">退出</button></form>
+  </header>
+  <main>
+    {{if .Flash}}<div class="flash {{if .FlashErr}}err{{end}}">{{.Flash}}</div>{{end}}
+    <div class="card">
+      <h2 style="margin:0 0 12px;font-size:16px">发放 Key</h2>
+      <form method="post" action="/admin/issue">
+        <div class="row">
+          <div><label>数量（1–50）</label><input type="number" name="count" value="1" min="1" max="50" required /></div>
+          <div><label>到期日（可选，按北京时间当天结束）</label><input type="date" name="expiresAt" /></div>
+          <div><label>发给谁</label><input type="text" name="issuedTo" maxlength="128" /></div>
+          <div><label>备注</label><input type="text" name="remark" maxlength="255" /></div>
+          <div><button type="submit">发放</button></div>
+        </div>
+      </form>
+      {{if .Issued}}
+        <p class="muted" style="margin-top:14px">刚发放的 Key（请立即复制发给领取人）：</p>
+        <ul>
+          {{range .Issued}}<li><code>{{.Key}}</code> {{if .ExpiresAt}}到期 {{.}}{{end}}</li>{{end}}
+        </ul>
+      {{end}}
+    </div>
+    <div class="card">
+      <form method="get" action="/admin" class="row" style="margin-bottom:12px">
+        <div>
+          <label>筛选</label>
+          <select name="status" onchange="this.form.submit()">
+            <option value="" {{if eq .Status ""}}selected{{end}}>全部</option>
+            <option value="active" {{if eq .Status "active"}}selected{{end}}>启用未过期</option>
+            <option value="expired" {{if eq .Status "expired"}}selected{{end}}>已过期</option>
+            <option value="disabled" {{if eq .Status "disabled"}}selected{{end}}>已停用</option>
+            <option value="bound" {{if eq .Status "bound"}}selected{{end}}>已绑定</option>
+            <option value="unbound" {{if eq .Status "unbound"}}selected{{end}}>未绑定</option>
+          </select>
+        </div>
+      </form>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Key</th><th>状态</th><th>有效期</th><th>领取人 / 备注</th><th>绑定设备</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Keys}}
+          <tr>
+            <td>{{.ID}}</td>
+            <td><code>{{.KeyCode}}</code></td>
+            <td>
+              {{if eq .Status 2}}<span class="tag bad">停用</span>
+              {{else if .ExpiresAt}}{{if not $.Now.Before .ExpiresAt }}<span class="tag warn">过期</span>{{else}}<span class="tag ok">启用</span>{{end}}
+              {{else}}<span class="tag ok">启用</span>{{end}}
+              {{if .BoundAt}}<span class="tag">已绑定</span>{{else}}<span class="tag">未绑定</span>{{end}}
+            </td>
+            <td>{{if .ExpiresAt}}{{.ExpiresAt.UTC.Format "2006-01-02 15:04 UTC"}}{{else}}无期限{{end}}</td>
+            <td>{{if .IssuedTo}}{{.IssuedTo}}{{else}}—{{end}}<div class="muted">{{if .Remark}}{{.Remark}}{{end}}</div></td>
+            <td>
+              {{if .DeviceLabel}}{{.DeviceLabel}}{{else if .BoundAt}}已绑定{{else}}—{{end}}
+              <div class="muted">{{if .BoundAt}}绑定于 {{.BoundAt.UTC.Format "2006-01-02 15:04"}}{{end}}</div>
+              <div class="muted">{{if .LastSeenAt}}最近校验 {{.LastSeenAt.UTC.Format "2006-01-02 15:04"}}{{end}}</div>
+            </td>
+            <td class="actions">
+              {{if .BoundAt}}
+              <form method="post" action="/admin/unbind/{{.ID}}" onsubmit="return confirm('确定解绑？解绑后旧设备立刻不能压缩。')">
+                <input type="hidden" name="reason" value="管理页解绑" />
+                <button class="secondary" type="submit">解绑</button>
+              </form>
+              {{end}}
+              {{if ne .Status 2}}
+              <form method="post" action="/admin/disable/{{.ID}}" onsubmit="return confirm('确定停用这枚 Key？停用后校验将返回无效，不会自动解绑。')">
+                <input type="hidden" name="reason" value="管理页停用" />
+                <button class="danger" type="submit">停用</button>
+              </form>
+              {{end}}
+            </td>
+          </tr>
+          {{else}}
+          <tr><td colspan="7" class="muted">暂无 Key</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </main>
+  {{else}}
+  <main class="login">
+    <div class="card">
+      <h1>快鸭鸭 · 管理口令</h1>
+      <p class="muted">使用 ADMIN_API_TOKEN 登录。仅供内部发放、查看绑定、解绑和停用。</p>
+      {{if .Flash}}<div class="flash err">{{.Flash}}</div>{{end}}
+      <form method="post" action="/admin/login">
+        <label>管理口令</label>
+        <input type="password" name="token" required autofocus />
+        <div style="margin-top:12px"><button type="submit">进入</button></div>
+      </form>
+    </div>
+  </main>
+  {{end}}
+</body>
+</html>
