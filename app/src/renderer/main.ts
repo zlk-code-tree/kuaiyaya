@@ -542,6 +542,12 @@ function bind(): void {
   });
   $("aboutBtn").addEventListener("click", () => void openAbout());
   $("aboutClose").addEventListener("click", () => $("aboutOverlay").classList.remove("show"));
+  $("aboutOverlay").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) $("aboutOverlay").classList.remove("show");
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") $("aboutOverlay").classList.remove("show");
+  });
   $("copyMailBtn").addEventListener("click", () => {
     void api.copyText("zhanglikunmamba@gmail.com").then(() => toast("已复制邮箱 zhanglikunmamba@gmail.com"));
   });

@@ -641,30 +641,53 @@ input[type="range"]::-webkit-slider-thumb {
 .file-item .kind { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; align-self: center; }
 
 .about {
-  width: 400px;
-  max-height: 560px;
-  overflow: auto;
+  width: 380px;
+  position: relative;
   text-align: center;
 }
 
-.about .duck-lg { margin: 0 auto 6px; }
-.about h3 { font-size: 20px; margin-top: 2px; }
-.about .ver { font-size: 12px; color: var(--text-secondary); margin: 4px 0 14px; }
-.about .who {
-  font-size: 13px;
-  color: var(--text);
-  margin-bottom: 14px;
-  line-height: 1.6;
+.about-x {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.06);
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.about .who span { color: var(--text-secondary); }
+
+.about-x:hover { background: rgba(0,0,0,0.12); color: var(--text); }
+
+.about-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  margin-bottom: 14px;
+}
+
+.about-head .duck { flex: none; }
+.about-head h3 { font-size: 18px; margin: 0; text-align: left; }
+.about-head .ver { font-size: 12px; color: var(--text-secondary); margin: 3px 0; }
+.about-head .who { font-size: 12px; color: var(--text-secondary); margin: 0; }
+
 .about .block {
   text-align: left;
   background: #f7f7f9;
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 10px 14px;
   margin-bottom: 10px;
 }
-.about .block .lab { font-size: 11px; color: var(--text-secondary); margin-bottom: 6px; }
+.about .block .lab { font-size: 11px; color: var(--text-secondary); margin-bottom: 5px; }
 .about .mail {
   border: 0;
   background: transparent;
@@ -676,14 +699,14 @@ input[type="range"]::-webkit-slider-thumb {
 .about .mail:hover { text-decoration: underline; }
 .about img.qr {
   display: block;
-  width: 210px;
+  width: 160px;
   height: auto;
-  margin: 8px auto 0;
+  margin: 6px auto 0;
   border-radius: 8px;
   background: #fff;
 }
 .about .note {
-  margin-top: 10px;
+  margin-top: 4px;
   font-size: 11px;
   color: var(--text-tertiary);
   line-height: 1.5;

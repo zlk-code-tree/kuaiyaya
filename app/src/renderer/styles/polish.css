@@ -136,7 +136,7 @@ input[type="range"]::-webkit-slider-thumb { width: 18px; height: 18px; backgroun
 .analysis-result { background: #faf9f4; }
 .analysis-result strong { font-size: 13px; }
 .analysis-dialog .analysis-note { color: #979184; }
-.about .duck-lg { width: 86px; height: 86px; }
+.about .about-head .duck { width: 60px; height: 60px; }
 .about .block { background: #faf9f4; }
 
 @media (prefers-reduced-motion: reduce) {

@@ -51,7 +51,7 @@
       <section class="screen" id="screen-idle">
         <div class="wash rich" aria-hidden="true"></div>
         <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="选择本地视频">
-          <span class="hero-chip"><span></span> 轻一点，清楚一点</span>
+          <span class="hero-chip"><span></span> 快一点，清楚一点</span>
           <div class="mascot-halo hero-mascot"><img class="duck duck-xl" src="./assets/duck-realistic.png" alt="" /></div>
           <h2>把视频交给快鸭鸭</h2>
           <p>拖入或选择一个视频，在本机轻松压缩</p>
@@ -216,10 +216,15 @@
 
     <div class="overlay" id="aboutOverlay">
       <div class="dialog about">
-        <img class="duck duck-lg" src="./assets/duck-realistic.png" alt="" />
-        <h3>快鸭鸭</h3>
-        <div class="ver" id="aboutVersion">—</div>
-        <div class="who"><span>维护者</span><br>黑曼巴的紫金王朝</div>
+        <button class="about-x" id="aboutClose" type="button" aria-label="关闭">×</button>
+        <div class="about-head">
+          <img class="duck duck-md" src="./assets/duck-realistic.png" alt="" />
+          <div class="about-head-text">
+            <h3>快鸭鸭</h3>
+            <div class="ver" id="aboutVersion">—</div>
+            <div class="who">开发者 · 黑曼巴的紫金王朝</div>
+          </div>
+        </div>
         <div class="block">
           <div class="lab">邮件反馈</div>
           <button class="mail" id="copyMailBtn" type="button">zhanglikunmamba@gmail.com</button>
@@ -229,9 +234,6 @@
           <img class="qr" id="aboutQr" alt="快鸭鸭反馈微信二维码" />
         </div>
         <div class="note">反馈不用注册或登录。视频压缩全程在本机完成，不会上传。</div>
-        <div class="dialog-actions" style="margin-top:14px">
-          <button class="btn btn-primary" id="aboutClose" type="button">关闭</button>
-        </div>
       </div>
     </div>
 
