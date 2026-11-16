@@ -121,6 +121,7 @@ export class QualityAnalyzer {
               const plan = buildCommands({
                 encoder, ffmpegPath: req.ffmpeg, input: ref.path, output, probe: ref.probe,
                 targetBytes: targetBytesFromMB(targets[j]), videoBps: bps, passLog,
+                mode: "bitrate",
               });
               try {
                 for (const args of plan.args) await this.execute(req.ffmpeg, args);

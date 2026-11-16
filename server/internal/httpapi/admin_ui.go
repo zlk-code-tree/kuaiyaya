@@ -16,6 +16,7 @@ import (
 const adminCookie = "kuaiyaya_admin"
 
 type adminPageData struct {
+	Base     string
 	Authed   bool
 	Flash    string
 	FlashErr bool
@@ -38,7 +39,15 @@ func (s *Server) requireAdminPage(c *gin.Context) bool {
 	return false
 }
 
+func (s *Server) publicPath(p string) string {
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return s.cfg.PublicBasePath + p
+}
+
 func (s *Server) renderAdmin(c *gin.Context, data adminPageData) {
+	data.Base = s.cfg.PublicBasePath
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
 	if err := s.adminTmpl.Execute(c.Writer, data); err != nil {
@@ -74,13 +83,13 @@ func (s *Server) adminLogin(c *gin.Context) {
 	}
 	secure := c.Request.TLS != nil
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(adminCookie, token, 12*3600, "/admin", "", secure, true)
-	c.Redirect(http.StatusFound, "/admin")
+	c.SetCookie(adminCookie, token, 12*3600, s.publicPath("/admin"), "", secure, true)
+	c.Redirect(http.StatusFound, s.publicPath("/admin"))
 }
 
 func (s *Server) adminLogout(c *gin.Context) {
-	c.SetCookie(adminCookie, "", -1, "/admin", "", false, true)
-	c.Redirect(http.StatusFound, "/admin")
+	c.SetCookie(adminCookie, "", -1, s.publicPath("/admin"), "", false, true)
+	c.Redirect(http.StatusFound, s.publicPath("/admin"))
 }
 
 func (s *Server) adminIssue(c *gin.Context) {
@@ -95,7 +104,7 @@ func (s *Server) adminIssue(c *gin.Context) {
 	}
 	exp, err := parseTime(expPtr)
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin?flash=到期日格式不正确")
+		c.Redirect(http.StatusFound, s.publicPath("/admin")+"?flash=到期日格式不正确")
 		return
 	}
 	out, err := s.svc.IssueKeys(c.Request.Context(), license.IssueInput{
@@ -105,7 +114,7 @@ func (s *Server) adminIssue(c *gin.Context) {
 		Remark:    ptrStr(c.PostForm("remark")),
 	})
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin?flash="+err.Error())
+		c.Redirect(http.StatusFound, s.publicPath("/admin")+"?flash="+err.Error())
 		return
 	}
 	items, _ := s.svc.ListKeys(c.Request.Context(), "")
@@ -118,10 +127,10 @@ func (s *Server) adminUnbind(c *gin.Context) {
 	}
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err := s.svc.Unbind(c.Request.Context(), id, c.PostForm("reason"), "admin-ui"); err != nil {
-		c.Redirect(http.StatusFound, "/admin?flash="+err.Error())
+		c.Redirect(http.StatusFound, s.publicPath("/admin")+"?flash="+err.Error())
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin?flash=已解绑")
+	c.Redirect(http.StatusFound, s.publicPath("/admin")+"?flash=已解绑")
 }
 
 func (s *Server) adminDisable(c *gin.Context) {
@@ -130,10 +139,10 @@ func (s *Server) adminDisable(c *gin.Context) {
 	}
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err := s.svc.Disable(c.Request.Context(), id, c.PostForm("reason"), "admin-ui"); err != nil {
-		c.Redirect(http.StatusFound, "/admin?flash="+err.Error())
+		c.Redirect(http.StatusFound, s.publicPath("/admin")+"?flash="+err.Error())
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin?flash=已停用")
+	c.Redirect(http.StatusFound, s.publicPath("/admin")+"?flash=已停用")
 }
 
 func mustTemplate(name, src string) *template.Template {

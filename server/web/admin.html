@@ -36,13 +36,13 @@
   {{if .Authed}}
   <header>
     <h1>快鸭鸭 · Key 管理</h1>
-    <form method="post" action="/admin/logout"><button class="secondary" type="submit">退出</button></form>
+    <form method="post" action="{{.Base}}/admin/logout"><button class="secondary" type="submit">退出</button></form>
   </header>
   <main>
     {{if .Flash}}<div class="flash {{if .FlashErr}}err{{end}}">{{.Flash}}</div>{{end}}
     <div class="card">
       <h2 style="margin:0 0 12px;font-size:16px">发放 Key</h2>
-      <form method="post" action="/admin/issue">
+      <form method="post" action="{{.Base}}/admin/issue">
         <div class="row">
           <div><label>数量（1–50）</label><input type="number" name="count" value="1" min="1" max="50" required /></div>
           <div><label>到期日（可选，按北京时间当天结束）</label><input type="date" name="expiresAt" /></div>
@@ -59,7 +59,7 @@
       {{end}}
     </div>
     <div class="card">
-      <form method="get" action="/admin" class="row" style="margin-bottom:12px">
+      <form method="get" action="{{.Base}}/admin" class="row" style="margin-bottom:12px">
         <div>
           <label>筛选</label>
           <select name="status" onchange="this.form.submit()">
@@ -98,13 +98,13 @@
             </td>
             <td class="actions">
               {{if .BoundAt}}
-              <form method="post" action="/admin/unbind/{{.ID}}" onsubmit="return confirm('确定解绑？解绑后旧设备立刻不能压缩。')">
+              <form method="post" action="{{$.Base}}/admin/unbind/{{.ID}}" onsubmit="return confirm('确定解绑？解绑后旧设备立刻不能压缩。')">
                 <input type="hidden" name="reason" value="管理页解绑" />
                 <button class="secondary" type="submit">解绑</button>
               </form>
               {{end}}
               {{if ne .Status 2}}
-              <form method="post" action="/admin/disable/{{.ID}}" onsubmit="return confirm('确定停用这枚 Key？停用后校验将返回无效，不会自动解绑。')">
+              <form method="post" action="{{$.Base}}/admin/disable/{{.ID}}" onsubmit="return confirm('确定停用这枚 Key？停用后校验将返回无效，不会自动解绑。')">
                 <input type="hidden" name="reason" value="管理页停用" />
                 <button class="danger" type="submit">停用</button>
               </form>
@@ -124,7 +124,7 @@
       <h1>快鸭鸭 · 管理口令</h1>
       <p class="muted">使用 ADMIN_API_TOKEN 登录。仅供内部发放、查看绑定、解绑和停用。</p>
       {{if .Flash}}<div class="flash err">{{.Flash}}</div>{{end}}
-      <form method="post" action="/admin/login">
+      <form method="post" action="{{.Base}}/admin/login">
         <label>管理口令</label>
         <input type="password" name="token" required autofocus />
         <div style="margin-top:12px"><button type="submit">进入</button></div>

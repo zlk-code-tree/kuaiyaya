@@ -14,6 +14,7 @@ type Config struct {
 	AdminAPIToken  string
 	AutoMigrate    bool
 	LogLevel       string
+	PublicBasePath string
 }
 
 func Load() (Config, error) {
@@ -22,11 +23,12 @@ func Load() (Config, error) {
 	_ = godotenv.Load(".env")
 
 	cfg := Config{
-		HTTPAddr:      env("HTTP_ADDR", "127.0.0.1:8080"),
-		DatabaseURL:   os.Getenv("DATABASE_URL"),
-		AdminAPIToken: os.Getenv("ADMIN_API_TOKEN"),
-		AutoMigrate:   envBool("AUTO_MIGRATE", true),
-		LogLevel:      env("LOG_LEVEL", "info"),
+		HTTPAddr:       env("HTTP_ADDR", "127.0.0.1:8080"),
+		DatabaseURL:    os.Getenv("DATABASE_URL"),
+		AdminAPIToken:  os.Getenv("ADMIN_API_TOKEN"),
+		AutoMigrate:    envBool("AUTO_MIGRATE", true),
+		LogLevel:       env("LOG_LEVEL", "info"),
+		PublicBasePath: strings.TrimRight(env("PUBLIC_BASE_PATH", ""), "/"),
 	}
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
 		return cfg, fmt.Errorf("DATABASE_URL 未配置")
