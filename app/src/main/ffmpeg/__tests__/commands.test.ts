@@ -29,6 +29,8 @@ describe("ffmpeg command plans", () => {
     });
     expect(plan.args).toHaveLength(2);
     expect(plan.args[0].join(" ")).toContain(`-b:v ${plan.videoBitrateBps}`);
+    expect(plan.args[0].join(" ")).toContain(`-maxrate ${Math.floor(plan.videoBitrateBps * 1.5)}`);
+    expect(plan.args[0].join(" ")).toContain(`-bufsize ${plan.videoBitrateBps * 3}`);
     expect(plan.args[0].join(" ")).toContain("-pass 1");
     expect(plan.args[1].join(" ")).toContain("-pass 2");
     expect(plan.args[0]).toContainEqual("libx265");
@@ -70,6 +72,10 @@ describe("ffmpeg command plans", () => {
     expect(plan.args).toHaveLength(1);
     expect(plan.args[0]).toContain("hevc_videotoolbox");
     expect(plan.args[0].join(" ")).toContain(`-b:v ${plan.videoBitrateBps}`);
+    expect(plan.args[0].join(" ")).toContain(`-maxrate ${Math.floor(plan.videoBitrateBps * 1.1)}`);
+    expect(plan.args[0].join(" ")).toContain("-allow_sw 0");
+    expect(plan.args[0].join(" ")).toContain("-prio_speed 0");
+    expect(plan.args[0].join(" ")).toContain("-spatial_aq 1");
     expect(plan.args[0].join(" ")).not.toContain("-q:v ");
     expect(plan.args[0].join(" ")).not.toContain("-pass ");
     expect(plan.args[0].join(" ")).toContain("-tag:v hvc1");

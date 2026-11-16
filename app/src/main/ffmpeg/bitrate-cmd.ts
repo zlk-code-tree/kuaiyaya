@@ -29,8 +29,6 @@ export function buildCommands(opts: {
       durationSec: opts.probe.durationSec,
       hasAudio: opts.probe.hasAudio,
     } satisfies BitrateInput);
-  const maxrate = Math.floor(bps * 1.1);
-  const bufsize = Math.floor(bps * 2);
   const commonIn = ["-hide_banner", "-y", "-i", opts.input, "-map", "0:v:0"];
   const audio = opts.probe.hasAudio
     ? (["-map", "0:a:0?", "-c:a", "aac", "-b:a", "128k"] as string[])
@@ -39,6 +37,9 @@ export function buildCommands(opts: {
   const progress = ["-progress", "pipe:1", "-nostats"];
 
   if (opts.encoder === "x265") {
+    // 两遍 ABR 已锁定平均体积，放宽 VBV 峰值让复杂画面有 bit 可用；超限由自动重压兜底。
+    const maxrate = Math.floor(bps * 1.5);
+    const bufsize = Math.floor(bps * 3);
     const passLog = opts.passLog ?? `${opts.output}.x265pass`;
     const nullSink = opts.nullSink ?? (process.platform === "win32" ? "NUL" : "/dev/null");
     const pass1 = [
@@ -52,8 +53,9 @@ export function buildCommands(opts: {
       String(maxrate),
       "-bufsize",
       String(bufsize),
+      // 第一遍只做统计分析，用 veryfast 换速度；画质由第二遍决定。
       "-preset",
-      "fast",
+      "veryfast",
       "-vf",
       vf,
       "-pass",
@@ -93,6 +95,10 @@ export function buildCommands(opts: {
     return { encoder: "x265", videoBitrateBps: bps, args: [pass1, pass2], passLog };
   }
 
+  // 硬编单遍，VBV 保持收紧以贴近目标体积；关掉速度优先、打开空间自适应量化换画质，
+  // 禁止静默退回 VideoToolbox 软编（软编回退由 job 层改走 libx265）。
+  const maxrate = Math.floor(bps * 1.1);
+  const bufsize = Math.floor(bps * 2);
   const single = [
     ...commonIn,
     "-c:v",
@@ -104,6 +110,10 @@ export function buildCommands(opts: {
     "-bufsize",
     String(bufsize),
     "-allow_sw",
+    "0",
+    "-prio_speed",
+    "0",
+    "-spatial_aq",
     "1",
     "-vf",
     vf,

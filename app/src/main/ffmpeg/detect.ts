@@ -62,7 +62,7 @@ export async function probeVideoToolbox(ffmpeg: string): Promise<boolean> {
         "-b:v",
         "200k",
         "-allow_sw",
-        "1",
+        "0",
         "-t",
         "0.2",
         "-tag:v",
