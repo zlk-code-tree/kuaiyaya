@@ -2,6 +2,7 @@ import type { AnalysisProgress, AppScreen, DoneEvent, FailEvent, LicenseState, P
 import { MSG } from "../shared/messages";
 import { suggestedOutputName } from "../shared/filename";
 import { fitOutput, outputLabel } from "../shared/scale";
+import { doneSubtitle } from "./done-sub";
 import { $, formatDuration, formatElapsed, formatMB, formatRemainDetail, toast } from "./dom";
 import { showScreen } from "./state/machine";
 import { applyInput, fromFileSize, tooLarge, type TargetState } from "./state/target-size";
@@ -478,14 +479,14 @@ function onDone(ev: DoneEvent): void {
   stopWorkTimer();
   working = false;
   lastOutput = ev.outputPath;
-  const usedAnalysis = qualityAnalysis && target && qualityAnalysis.filePath === probe?.path
-    && qualityAnalysis.candidates.some((candidate) => candidate.targetMB === target?.targetMB);
-  const notes: string[] = [];
-  if (ev.exceededTarget) notes.push("输出已保存。实际体积超出了参考目标。");
-  if (usedAnalysis && (ev.retried || ev.encoder !== qualityAnalysis?.encoder)) {
-    notes.push("输出文件已保存。实际编码参数与试压不同，请检查画质。");
-  }
-  $("doneSub").textContent = notes.length > 0 ? notes.join("") : "输出文件已保存在原片同一目录";
+  const usedAnalysis = Boolean(qualityAnalysis && target && qualityAnalysis.filePath === probe?.path
+    && qualityAnalysis.candidates.some((candidate) => candidate.targetMB === target?.targetMB));
+  $("doneSub").textContent = doneSubtitle({
+    exceededTarget: ev.exceededTarget,
+    usedAnalysis,
+    encoder: ev.encoder,
+    analysisEncoder: usedAnalysis ? qualityAnalysis?.encoder ?? null : null,
+  });
   $("statBefore").textContent = formatMB(ev.inputBytes);
   $("statAfter").textContent = formatMB(ev.outputBytes);
   const pct = ev.inputBytes > 0 ? Math.round((ev.savedBytes / ev.inputBytes) * 100) : 0;
