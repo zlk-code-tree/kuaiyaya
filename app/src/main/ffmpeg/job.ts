@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { rename, stat } from "node:fs/promises";
 import type { DoneEvent, EncoderKind, FailEvent, ProbeInfo, ProgressEvent } from "../../shared/types";
-import { exceedsTarget, retryVideoBitrateBps, targetBytesFromMB } from "../../shared/bitrate";
+import { exceedsTarget, targetBytesFromMB } from "../../shared/bitrate";
 import { selectEncoder } from "../../shared/encoder";
 import { allocateOutputPath, partialPath, passLogPrefix } from "../../shared/output-name";
 import { displaySize, fitOutput, outputLabel } from "../../shared/scale";
@@ -104,21 +104,10 @@ export class CompressJob {
           probe: req.probe,
           targetBytes,
           passLog,
+          mode: "quality",
         });
-        let retried = false;
         try {
-          await this.runPlan(req, plan, false);
-          const firstStat = await stat(tempOut);
-          if (exceedsTarget(firstStat.size, targetBytes)) {
-            retried = true;
-            const videoBps = retryVideoBitrateBps(plan.videoBitrateBps, firstStat.size, targetBytes);
-            await removeTempFiles(this.temps);
-            const retryPlan = buildCommands({
-              encoder, ffmpegPath: req.ffmpegPath, input: req.probe.path,
-              output: tempOut, probe: req.probe, targetBytes, videoBps, passLog,
-            });
-            await this.runPlan(req, retryPlan, true);
-          }
+          await this.runPlan(req, plan);
         } catch (err) {
           if (this.cancelled) throw new CancelError();
           if (encoder === "videotoolbox" && req.caps.x265 && isEncoderFailure(err)) {
@@ -130,12 +119,11 @@ export class CompressJob {
         }
 
         const finalStat = await stat(tempOut);
-        const exceededTarget = exceedsTarget(finalStat.size, targetBytes);
         if (this.cancelled) throw new CancelError();
-        if (exceededTarget || finalStat.size >= req.probe.sizeBytes) {
+        if (finalStat.size >= req.probe.sizeBytes) {
           await removeTempFiles(this.temps);
           this.running = false;
-          req.hooks.onFail({ message: "未能压到目标体积，未保存压缩结果。请适当调大目标后重试；原片没有改动。" });
+          req.hooks.onFail({ message: "压缩后体积未小于原片，未保存结果；原片没有改动。" });
           return;
         }
 
@@ -148,8 +136,8 @@ export class CompressJob {
           outputBytes: finalStat.size,
           savedBytes: Math.max(0, req.probe.sizeBytes - finalStat.size),
           encoder: used,
-          retried,
-          exceededTarget,
+          retried: false,
+          exceededTarget: exceedsTarget(finalStat.size, targetBytes),
           elapsedSec: this.elapsedSec(),
         });
         return;
@@ -169,7 +157,7 @@ export class CompressJob {
     }
   }
 
-  private runPlan(req: JobRequest, plan: ReturnType<typeof buildCommands>, isRetry: boolean): Promise<void> {
+  private runPlan(req: JobRequest, plan: ReturnType<typeof buildCommands>): Promise<void> {
     return new Promise((resolve, reject) => {
       const runPass = (index: number) => {
         if (this.cancelled) {
@@ -182,16 +170,14 @@ export class CompressJob {
           return;
         }
         const twoPass = plan.args.length > 1;
-        const phase = twoPass ? (index === 0 ? "pass1" : "pass2") : isRetry ? "retry" : "single";
+        const phase = twoPass ? (index === 0 ? "pass1" : "pass2") : "single";
         const dim = outputLabel(displaySize(req.probe.width, req.probe.height, req.probe.rotation));
         const message =
           phase === "pass1"
             ? "第一遍：分析画面，为第二遍编码做准备"
             : phase === "pass2"
               ? `第二遍：按目标上限编码为 ${dim} HEVC`
-              : isRetry
-                ? `输出略超目标，正在按上限再压为 ${dim} HEVC`
-                : `正在按目标体积编码为 ${dim} HEVC`;
+              : `正在按清晰度优先编码为 ${dim} HEVC`;
         const started = Date.now();
         req.hooks.onProgress({
           encoder: plan.encoder,

@@ -2,6 +2,7 @@ import type { AnalysisProgress, AppScreen, DoneEvent, FailEvent, LicenseState, P
 import { MSG } from "../shared/messages";
 import { suggestedOutputName } from "../shared/filename";
 import { fitOutput, outputLabel } from "../shared/scale";
+import { doneSubtitle } from "./done-sub";
 import { $, formatDuration, formatElapsed, formatMB, formatRemainDetail, toast } from "./dom";
 import { showScreen } from "./state/machine";
 import { applyInput, fromFileSize, tooLarge, type TargetState } from "./state/target-size";
@@ -69,9 +70,7 @@ function renderTarget(): void {
   slider.max = String(target.max);
   slider.value = String(target.targetMB);
   input.value = String(target.targetMB);
-  const origMB = probe.sizeBytes / (1024 * 1024);
-  const pct = Math.round((target.targetMB / origMB) * 100);
-  $("targetHint").textContent = `目标 ${target.targetMB} MB，约为原大小的 ${pct}%。将根据目标分配码率；目标越小，画质损失可能越明显。`;
+  $("targetHint").textContent = `目标 ${target.targetMB} MB 仅作参考。将按清晰度优先编码，1080p 及以下不缩小，更高分辨率长边不超过 1920。超出目标也会保留结果。`;
   renderAnalysisSummary();
   const banner = $("targetBanner");
   const blocked = tooLarge(target);
@@ -403,8 +402,8 @@ function stopKeyProgress(): void {
 }
 
 function encodePhaseText(): string {
-  if (!probe) return "正在按目标体积编码为 HEVC";
-  return `正在按目标体积编码为 ${outputLabel({ width: probe.displayWidth, height: probe.displayHeight })} HEVC`;
+  if (!probe) return "正在按清晰度优先编码为 HEVC";
+  return `正在按清晰度优先编码为 ${outputLabel({ width: probe.displayWidth, height: probe.displayHeight })} HEVC`;
 }
 
 function resetWorkUi(): void {
@@ -480,11 +479,14 @@ function onDone(ev: DoneEvent): void {
   stopWorkTimer();
   working = false;
   lastOutput = ev.outputPath;
-  const usedAnalysis = qualityAnalysis && target && qualityAnalysis.filePath === probe?.path
-    && qualityAnalysis.candidates.some((candidate) => candidate.targetMB === target?.targetMB);
-  $("doneSub").textContent = usedAnalysis && (ev.retried || ev.encoder !== qualityAnalysis?.encoder)
-    ? "输出文件已保存。实际编码参数与试压不同，请检查画质。"
-    : "输出文件已保存在原片同一目录";
+  const usedAnalysis = Boolean(qualityAnalysis && target && qualityAnalysis.filePath === probe?.path
+    && qualityAnalysis.candidates.some((candidate) => candidate.targetMB === target?.targetMB));
+  $("doneSub").textContent = doneSubtitle({
+    exceededTarget: ev.exceededTarget,
+    usedAnalysis,
+    encoder: ev.encoder,
+    analysisEncoder: usedAnalysis ? qualityAnalysis?.encoder ?? null : null,
+  });
   $("statBefore").textContent = formatMB(ev.inputBytes);
   $("statAfter").textContent = formatMB(ev.outputBytes);
   const pct = ev.inputBytes > 0 ? Math.round((ev.savedBytes / ev.inputBytes) * 100) : 0;
