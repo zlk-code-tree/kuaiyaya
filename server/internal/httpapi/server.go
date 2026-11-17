@@ -61,6 +61,7 @@ func New(cfg config.Config, st store.Store, tmplHTML string, lg *slog.Logger) *S
 	valLimit := newLimiter(30, 60*time.Second)
 	r.POST("/v1/license/activate", rateLimit(actLimit), lic.activate)
 	r.POST("/v1/license/validate", rateLimit(valLimit), lic.validate)
+	r.GET("/v1/app/releases/latest", latestRelease(cfg.UpdateManifestPath))
 
 	ag := r.Group("/v1/admin", adminAuth(cfg.AdminAPIToken))
 	ag.POST("/keys", adm.issue)

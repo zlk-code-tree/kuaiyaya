@@ -1,4 +1,4 @@
-import type { AnalysisProgress, AppScreen, DoneEvent, FailEvent, LicenseState, ProbeInfo, ProgressEvent, QualityAnalysis } from "../shared/types";
+import type { AnalysisProgress, AppScreen, DoneEvent, FailEvent, LicenseState, ProbeInfo, ProgressEvent, QualityAnalysis, UpdateCheckResult } from "../shared/types";
 import { MSG } from "../shared/messages";
 import { suggestedOutputName } from "../shared/filename";
 import { fitOutput, outputLabel } from "../shared/scale";
@@ -18,12 +18,68 @@ let working = false;
 let analyzing = false;
 let analysisCancelRequested = false;
 let qualityAnalysis: QualityAnalysis | null = null;
+let availableUpdate: Extract<UpdateCheckResult, { status: "available" }> | null = null;
+let dismissedUpdate: string | null = null;
 let workTimer: number | null = null;
 let workOrigin = 0;
 
 function setScreen(id: AppScreen): void {
   screen = id;
   showScreen(id);
+  renderUpdateNotice();
+}
+
+function renderUpdateNotice(): void {
+  const notice = $("updateNotice");
+  const visible = availableUpdate && availableUpdate.version !== dismissedUpdate && !working && !analyzing && screen !== "screen-work";
+  notice.classList.toggle("hidden", !visible);
+  if (visible && availableUpdate) notice.textContent = `发现新版本 ${availableUpdate.version}`;
+  $("aboutUpdateDetails").classList.toggle("hidden", !availableUpdate);
+}
+
+async function checkUpdates(manual: boolean): Promise<void> {
+  const button = $("checkUpdateBtn") as HTMLButtonElement;
+  if (manual) {
+    button.disabled = true;
+    $("aboutUpdateStatus").textContent = "正在检查…";
+  }
+  let result: UpdateCheckResult;
+  try { result = await api.checkForUpdates(); } catch { result = { status: "error" }; }
+  if (result.status === "available") {
+    availableUpdate = result;
+    if (manual) dismissedUpdate = null;
+    $("aboutUpdateStatus").textContent = `发现新版本 ${result.version}`;
+  } else if (result.status === "up-to-date") {
+    availableUpdate = null;
+    $("aboutUpdateStatus").textContent = "当前已是最新版本";
+  } else if (result.status === "not-published") {
+    availableUpdate = null;
+    $("aboutUpdateStatus").textContent = "暂无版本发布信息";
+  } else if (manual) {
+    $("aboutUpdateStatus").textContent = result.status === "unsupported" ? "当前平台暂不支持更新检查" : "检查失败，请稍后重试";
+  }
+  if (manual) button.disabled = false;
+  renderUpdateNotice();
+}
+
+function showUpdate(): void {
+  if (!availableUpdate) return;
+  if (analyzing || working || screen === "screen-work") {
+    $("aboutUpdateStatus").textContent = "压缩或分析完成后可查看更新";
+    return;
+  }
+  $("aboutOverlay").classList.remove("show");
+  $("updateTitle").textContent = `发现新版本 ${availableUpdate.version}`;
+  $("updateNotes").textContent = availableUpdate.notes.trim() || "本次更新暂无详细说明。";
+  $("updateOverlay").classList.add("show");
+  ($("updateDownload") as HTMLButtonElement).focus();
+}
+
+function dismissUpdate(): void {
+  if (availableUpdate) dismissedUpdate = availableUpdate.version;
+  $("updateOverlay").classList.remove("show");
+  renderUpdateNotice();
+  ($("aboutBtn") as HTMLButtonElement).focus();
 }
 
 function applyLicense(s: LicenseState): void {
@@ -151,6 +207,7 @@ async function onAnalyze(): Promise<void> {
     return;
   }
   analyzing = true;
+  renderUpdateNotice();
   analysisCancelRequested = false;
   const cancel = $("analysisCancel") as HTMLButtonElement;
   cancel.disabled = false;
@@ -184,6 +241,7 @@ async function onAnalyze(): Promise<void> {
     analyzing = false;
     if (analysisCancelRequested) $("analysisOverlay").classList.remove("show");
     syncStartButton();
+    renderUpdateNotice();
   }
 }
 
@@ -531,6 +589,17 @@ async function openAbout(): Promise<void> {
 
 function bind(): void {
   document.addEventListener("keydown", (event) => {
+    if (!$('updateOverlay').classList.contains("show")) return;
+    if (event.key === "Escape") { event.preventDefault(); dismissUpdate(); return; }
+    if (event.key !== "Tab") return;
+    const buttons = [$("updateLater"), $("updateDownload")];
+    const index = buttons.indexOf(document.activeElement as HTMLElement);
+    if (index === -1 || (event.shiftKey && index === 0) || (!event.shiftKey && index === buttons.length - 1)) {
+      event.preventDefault();
+      buttons[event.shiftKey ? buttons.length - 1 : 0].focus();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
     if (event.key !== "Tab" || !$("analysisOverlay").classList.contains("show")) return;
     const buttons = ["analysisCancel", "analysisClose", "analysisApply"]
       .map((id) => $(id) as HTMLButtonElement)
@@ -543,6 +612,21 @@ function bind(): void {
     }
   });
   $("aboutBtn").addEventListener("click", () => void openAbout());
+  $("checkUpdateBtn").addEventListener("click", () => void checkUpdates(true));
+  $("updateNotice").addEventListener("click", showUpdate);
+  $("aboutUpdateDetails").addEventListener("click", showUpdate);
+  $("updateLater").addEventListener("click", dismissUpdate);
+  $("updateDownload").addEventListener("click", () => {
+    const button = $("updateDownload") as HTMLButtonElement;
+    button.disabled = true;
+    void api.openUpdateDownload().then(() => {
+      $("updateOverlay").classList.remove("show");
+    }).catch(() => {
+      $("updateOverlay").classList.remove("show");
+      showAlert("无法打开下载页面", "请检查网络后重新检查更新。");
+    })
+      .finally(() => { button.disabled = false; });
+  });
   $("aboutClose").addEventListener("click", () => $("aboutOverlay").classList.remove("show"));
   $("aboutOverlay").addEventListener("click", (event) => {
     if (event.target === event.currentTarget) $("aboutOverlay").classList.remove("show");
@@ -682,6 +766,8 @@ async function boot(): Promise<void> {
   } else {
     setScreen("screen-key");
   }
+  window.setTimeout(() => void checkUpdates(false), 5000);
+  window.setInterval(() => void checkUpdates(false), 12 * 60 * 60 * 1000);
 }
 
 void boot();

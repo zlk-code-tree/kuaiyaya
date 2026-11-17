@@ -5,6 +5,7 @@ import "testing"
 func TestLoadPublicBasePath(t *testing.T) {
 	t.Setenv("DATABASE_URL", "root:password@tcp(127.0.0.1:3306)/kuaiyaya?parseTime=true")
 	t.Setenv("ADMIN_API_TOKEN", "test-admin-token-32bytes-minimum")
+	t.Setenv("UPDATE_MANIFEST_PATH", " /tmp/releases.json ")
 
 	t.Setenv("PUBLIC_BASE_PATH", "/kuaiyaya/")
 	cfg, err := Load()
@@ -13,6 +14,9 @@ func TestLoadPublicBasePath(t *testing.T) {
 	}
 	if cfg.PublicBasePath != "/kuaiyaya" {
 		t.Fatalf("trailing slash: got %q", cfg.PublicBasePath)
+	}
+	if cfg.UpdateManifestPath != "/tmp/releases.json" {
+		t.Fatalf("update manifest path: got %q", cfg.UpdateManifestPath)
 	}
 
 	t.Setenv("PUBLIC_BASE_PATH", " /kuaiyaya/// ")

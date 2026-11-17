@@ -135,6 +135,13 @@ export interface AboutInfo {
   qrSrc: string;
 }
 
+export type UpdateCheckResult =
+  | { status: "available"; version: string; notes: string }
+  | { status: "up-to-date" }
+  | { status: "not-published" }
+  | { status: "unsupported" }
+  | { status: "error" };
+
 export interface KuaiyayaAPI {
   selectVideo(): Promise<string | null>;
   probe(filePath: string): Promise<ProbeInfo>;
@@ -156,6 +163,8 @@ export interface KuaiyayaAPI {
     onChange(cb: (s: LicenseState) => void): () => void;
   };
   about(): Promise<AboutInfo>;
+  checkForUpdates(): Promise<UpdateCheckResult>;
+  openUpdateDownload(): Promise<void>;
   copyText(text: string): Promise<void>;
   getEncoderCaps(): Promise<EncoderCaps>;
   resolveDropPath(file: File): string;

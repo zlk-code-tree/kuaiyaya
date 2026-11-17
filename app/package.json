@@ -1,7 +1,7 @@
 {
   "name": "kuaiyaya",
   "productName": "快鸭鸭",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "快鸭鸭：本机视频压缩，Key 开通。",
   "main": "./out/main/index.js",
   "author": "黑曼巴的紫金王朝",

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, shell } from "electron";
 import { join } from "node:path";
 import { APP_NAME, MSG } from "../shared/messages";
 import type { EncoderCaps } from "../shared/types";
@@ -6,6 +6,7 @@ import { resolveBinaries } from "./ffmpeg/binary";
 import { detectCaps } from "./ffmpeg/detect";
 import { CompressJob } from "./ffmpeg/job";
 import { QualityAnalyzer } from "./ffmpeg/quality-analysis";
+import { UpdateChecker } from "./update/checker";
 import { KeychainStore, MemorySecretStore, WindowsSecretStore } from "./license/store";
 import { LicenseSession } from "./license/session";
 import { registerIpc } from "./ipc";
@@ -113,6 +114,7 @@ app.on("second-instance", () => {
 app.whenReady().then(async () => {
   config = await loadConfig();
   session = new LicenseSession(secrets, () => ({ baseUrl: config.apiBaseUrl }), app.getVersion());
+  const updates = new UpdateChecker(() => config.apiBaseUrl, app.getVersion(), process.platform, process.arch, (url) => shell.openExternal(url));
   session.onChange((s) => mainWindow?.webContents.send("license-change", s));
   registerIpc({
     getWindow: () => mainWindow,
@@ -120,6 +122,7 @@ app.whenReady().then(async () => {
     getConfig: () => config,
     job,
     analyzer,
+    updates,
     getCaps,
     getFfmpeg: getBins,
   });

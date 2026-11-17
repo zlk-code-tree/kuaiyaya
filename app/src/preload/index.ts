@@ -28,6 +28,8 @@ const api: KuaiyayaAPI = {
     onChange: (cb) => on<LicenseState>("license-change", cb),
   },
   about: () => ipcRenderer.invoke("about"),
+  checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
+  openUpdateDownload: () => ipcRenderer.invoke("open-update-download"),
   copyText: (text) => ipcRenderer.invoke("copy-text", text),
   getEncoderCaps: () => ipcRenderer.invoke("get-encoder-caps"),
   resolveDropPath: (file) => webUtils.getPathForFile(file),

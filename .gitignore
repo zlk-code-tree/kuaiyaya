@@ -6,6 +6,7 @@ app/dist/
 app/release/
 server/bin/
 server/keyserver
+server/releases.json
 *.exe
 *.dmg
 *.zip

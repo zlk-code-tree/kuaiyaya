@@ -3,15 +3,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { defaultApiBaseUrl } from "../shared/api-config";
 
 export interface AppConfig {
   apiBaseUrl: string;
 }
 
-const DEFAULT_API = "http://127.0.0.1:8080";
-
 export function defaultConfig(): AppConfig {
-  return { apiBaseUrl: process.env.KUAIYAYA_API_BASE || DEFAULT_API };
+  return { apiBaseUrl: defaultApiBaseUrl(process.platform, process.env.KUAIYAYA_API_BASE) };
 }
 
 export async function loadConfig(): Promise<AppConfig> {

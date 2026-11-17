@@ -1,0 +1,18 @@
+{
+  "releases": [
+    {
+      "platform": "darwin",
+      "arch": "arm64",
+      "version": "1.0.2",
+      "notes": "改善视频压缩画质与使用体验。",
+      "downloadUrl": "https://downloads.example.com/kuaiyaya/1.0.2/mac-arm64.dmg"
+    },
+    {
+      "platform": "win32",
+      "arch": "x64",
+      "version": "1.0.2",
+      "notes": "改善视频压缩画质与使用体验。",
+      "downloadUrl": "https://downloads.example.com/kuaiyaya/1.0.2/windows-x64.zip"
+    }
+  ]
+}

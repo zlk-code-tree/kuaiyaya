@@ -8,6 +8,7 @@ import { LicenseSession } from "./license/session";
 import { probeFile, isLikelyVideoPath } from "./ffmpeg/probe";
 import { CompressJob } from "./ffmpeg/job";
 import { QualityAnalyzer } from "./ffmpeg/quality-analysis";
+import { UpdateChecker } from "./update/checker";
 import { checkGuards } from "./fs/guard";
 import { selectVideo } from "./fs/dialog";
 import { openFile, revealInFinder } from "./fs/open";
@@ -19,6 +20,7 @@ export interface MainContext {
   getConfig: () => AppConfig;
   job: CompressJob;
   analyzer: QualityAnalyzer;
+  updates: UpdateChecker;
   getCaps: () => Promise<EncoderCaps>;
   getFfmpeg: () => Promise<{ ffmpeg: string; ffprobe: string }>;
 }
@@ -170,6 +172,9 @@ export function registerIpc(ctx: MainContext): void {
   ipcMain.handle("license-get-state", async () => ctx.session.getState());
   ipcMain.handle("license-activate", async (_e, key: string) => ctx.session.activate(String(key ?? "")));
   ipcMain.handle("license-reenter", async () => ctx.session.reenterKey());
+
+  ipcMain.handle("check-for-updates", async () => ctx.updates.check());
+  ipcMain.handle("open-update-download", async () => ctx.updates.openDownload());
 
   ipcMain.handle("about", async () => {
     let qrSrc = "";

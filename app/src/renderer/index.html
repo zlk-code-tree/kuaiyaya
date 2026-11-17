@@ -17,6 +17,7 @@
         <div class="brand-copy"><h1>快鸭鸭</h1><span>本地视频压缩</span></div>
       </div>
       <div class="title-actions">
+        <button class="title-btn update-notice hidden" id="updateNotice" type="button">发现新版本</button>
         <button class="title-btn" id="aboutBtn" type="button">关于</button>
       </div>
     </div>
@@ -214,6 +215,18 @@
       </div>
     </div>
 
+    <div class="overlay" id="updateOverlay">
+      <div class="dialog update-dialog" role="dialog" aria-modal="true" aria-labelledby="updateTitle">
+        <h3 id="updateTitle">发现新版本</h3>
+        <p>下载后请退出快鸭鸭，再按系统提示安装。</p>
+        <div class="update-notes" id="updateNotes"></div>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" id="updateLater" type="button">稍后再说</button>
+          <button class="btn btn-primary" id="updateDownload" type="button">前往下载</button>
+        </div>
+      </div>
+    </div>
+
     <div class="overlay" id="aboutOverlay">
       <div class="dialog about">
         <button class="about-x" id="aboutClose" type="button" aria-label="关闭">×</button>
@@ -224,6 +237,11 @@
             <div class="ver" id="aboutVersion">—</div>
             <div class="who">开发者 · 黑曼巴的紫金王朝</div>
           </div>
+        </div>
+        <div class="about-update">
+          <span id="aboutUpdateStatus" aria-live="polite">检查是否有新版本</span>
+          <button class="linkish" id="checkUpdateBtn" type="button">检查更新</button>
+          <button class="linkish hidden" id="aboutUpdateDetails" type="button">查看更新</button>
         </div>
         <div class="block">
           <div class="lab">邮件反馈</div>
