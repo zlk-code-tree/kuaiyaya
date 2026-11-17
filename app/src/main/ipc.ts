@@ -1,7 +1,9 @@
 import { BrowserWindow, ipcMain, clipboard, app } from "electron";
 import { readFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import type { QueueStartItem, QueueStartRequest } from "../shared/queue";
 import type { EncoderCaps, ProbeInfo, QualityAnalysis, StartInput } from "../shared/types";
+import type { BatchQueue } from "./queue/runner";
 import { candidateTargets } from "../shared/quality";
 import { APP_NAME, FEEDBACK_EMAIL, MAINTAINER, MSG } from "../shared/messages";
 import { LicenseSession } from "./license/session";
@@ -23,6 +25,7 @@ export interface MainContext {
   updates: UpdateChecker;
   getCaps: () => Promise<EncoderCaps>;
   getFfmpeg: () => Promise<{ ffmpeg: string; ffprobe: string }>;
+  queue: BatchQueue;
 }
 
 const probes = new Map<string, ProbeInfo>();
@@ -46,10 +49,35 @@ function validTarget(probe: ProbeInfo, targetMB: number): boolean {
   return candidateTargets(targetMB, probe.sizeBytes).length > 0;
 }
 
+function readQueueItems(input: QueueStartRequest | undefined): QueueStartItem[] {
+  if (!input || !Array.isArray(input.items)) return [];
+  const items: QueueStartItem[] = [];
+  for (const raw of input.items) {
+    if (!raw || typeof raw.id !== "string" || !raw.id || typeof raw.filePath !== "string" || !raw.filePath) continue;
+    const targetMB = Number(raw.targetMB);
+    if (!Number.isFinite(targetMB)) continue;
+    items.push({
+      id: raw.id,
+      filePath: raw.filePath,
+      name: typeof raw.name === "string" && raw.name ? raw.name : raw.filePath,
+      targetMB,
+      sizeBytes: Number.isFinite(Number(raw.sizeBytes)) ? Number(raw.sizeBytes) : 0,
+      durationSec: Number.isFinite(Number(raw.durationSec)) ? Number(raw.durationSec) : 0,
+      displayWidth: Number.isFinite(Number(raw.displayWidth)) ? Number(raw.displayWidth) : 0,
+      displayHeight: Number.isFinite(Number(raw.displayHeight)) ? Number(raw.displayHeight) : 0,
+    });
+  }
+  return items;
+}
+
+function busy(): { ok: false; code: "busy"; message: string } {
+  return { ok: false, code: "busy", message: "正在处理其他任务，请稍候。" };
+}
+
 export function registerIpc(ctx: MainContext): void {
   ipcMain.handle("select-video", async () => {
     const win = ctx.getWindow();
-    if (!win) return null;
+    if (!win) return [];
     return selectVideo(win);
   });
 
@@ -80,6 +108,7 @@ export function registerIpc(ctx: MainContext): void {
   });
 
   ipcMain.handle("start-compress", async (_e, input: StartInput) => {
+    if (ctx.queue.isBusy()) throw new Error("正在处理其他任务，请稍候。");
     const probe = await currentProbe(input.filePath);
     if (!validTarget(probe, input.targetMB)) throw new Error("请输入小于原片大小的有效目标。");
     const decision = await ctx.session.decideStart();
@@ -94,7 +123,7 @@ export function registerIpc(ctx: MainContext): void {
     }
     const bins = await ctx.getFfmpeg();
     const caps = await ctx.getCaps();
-    if (ctx.job.isRunning || ctx.analyzer.isRunning || pendingAnalysis) throw new Error("正在处理其他任务，请稍候。");
+    if (ctx.queue.isBusy() || ctx.job.isRunning || ctx.analyzer.isRunning || pendingAnalysis) throw new Error("正在处理其他任务，请稍候。");
     const previous = analyses.get(input.filePath);
     const preferredEncoder = previous?.candidates.some((candidate) => candidate.targetMB === input.targetMB)
       ? previous.encoder : undefined;
@@ -118,8 +147,28 @@ export function registerIpc(ctx: MainContext): void {
     await ctx.job.cancel();
   });
 
+  ipcMain.handle("queue-start", async (_e, input: QueueStartRequest) => {
+    if (ctx.queue.isBusy() || ctx.job.isRunning || ctx.analyzer.isRunning || pendingAnalysis) return busy();
+    const items = readQueueItems(input);
+    if (items.length === 0) return { ok: false, message: "没有可以压缩的视频。" };
+    return ctx.queue.start(items);
+  });
+
+  ipcMain.handle("queue-cancel-item", async (_e, id: string) => {
+    if (typeof id === "string") ctx.queue.cancelItem(id);
+  });
+
+  ipcMain.handle("queue-cancel-all", async () => {
+    ctx.queue.cancelAll();
+  });
+
+  ipcMain.handle("queue-retry", async (_e, input: { id?: string; allFailed?: boolean }) => {
+    if (input?.allFailed) ctx.queue.retryFailed();
+    else if (typeof input?.id === "string") ctx.queue.retryItem(input.id);
+  });
+
   ipcMain.handle("analyze-quality", async (_e, input: StartInput) => {
-    if (ctx.job.isRunning || pendingAnalysis) throw new Error("正在处理其他任务，请稍候。");
+    if (ctx.queue.isBusy() || ctx.job.isRunning || pendingAnalysis) throw new Error("正在处理其他任务，请稍候。");
     const pending = { cancelled: false };
     pendingAnalysis = pending;
     const win = ctx.getWindow();
@@ -133,7 +182,7 @@ export function registerIpc(ctx: MainContext): void {
       const bins = await ctx.getFfmpeg();
       const caps = await ctx.getCaps();
       if (pending.cancelled || !win || win.isDestroyed()) throw new Error("已取消画质分析。");
-      if (ctx.job.isRunning || ctx.analyzer.isRunning) throw new Error("正在处理其他任务，请稍候。");
+      if (ctx.queue.isBusy() || ctx.job.isRunning || ctx.analyzer.isRunning) throw new Error("正在处理其他任务，请稍候。");
       const result = await ctx.analyzer.run({
         ffmpeg: bins.ffmpeg, ffprobe: bins.ffprobe, probe, targetMB: input.targetMB, caps,
         onProgress: (event) => { if (!win.isDestroyed()) win.webContents.send("analysis-progress", event); },

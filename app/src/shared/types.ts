@@ -1,7 +1,10 @@
+import type { QueueRetryRequest, QueueSnapshot, QueueStartRequest, QueueStartResult } from "./queue";
+
 export type AppScreen =
   | "screen-key"
   | "screen-idle"
   | "screen-ready"
+  | "screen-queue"
   | "screen-work"
   | "screen-done"
   | "screen-fail";
@@ -143,7 +146,12 @@ export type UpdateCheckResult =
   | { status: "error" };
 
 export interface KuaiyayaAPI {
-  selectVideo(): Promise<string | null>;
+  selectVideo(): Promise<string[]>;
+  queueStart(input: QueueStartRequest): Promise<QueueStartResult>;
+  queueCancelItem(id: string): Promise<void>;
+  queueCancelAll(): Promise<void>;
+  queueRetry(input: QueueRetryRequest): Promise<void>;
+  onQueueUpdate(cb: (snapshot: QueueSnapshot) => void): () => void;
   probe(filePath: string): Promise<ProbeInfo>;
   checkStartGuards(input: StartInput): Promise<GuardResult>;
   startCompress(input: StartInput): Promise<void>;

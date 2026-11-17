@@ -55,7 +55,7 @@
           <span class="hero-chip"><span></span> 快一点，清楚一点</span>
           <div class="mascot-halo hero-mascot"><img class="duck duck-xl" src="./assets/duck-realistic.png" alt="" /></div>
           <h2>把视频交给快鸭鸭</h2>
-          <p>拖入或选择一个视频，在本机轻松压缩</p>
+          <p>拖入或选择视频，在本机轻松压缩</p>
           <div class="choose">选择视频 <span aria-hidden="true">↗</span></div>
           <div class="dropzone-note">支持常见视频格式 · 文件不会上传</div>
         </div>
@@ -94,6 +94,41 @@
           <button class="btn btn-secondary" id="analyzeBtn" type="button">分析画质</button>
         </div>
         <div class="actions"><button class="btn btn-primary start-button" id="startBtn" type="button">开始压缩</button></div>
+      </section>
+
+      <section class="screen" id="screen-queue">
+        <div class="wash faint" aria-hidden="true"></div>
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">QUEUE</div>
+            <h2>批量压缩</h2>
+            <p>按顺序一支一支压，单个失败不影响其余。</p>
+          </div>
+          <span class="privacy-badge"><span></span> 本机处理</span>
+        </div>
+        <div class="queue-summary hidden" id="queueSummary" aria-live="polite"></div>
+        <div class="panel queue-target-panel">
+          <div class="target-heading">
+            <div>
+              <div class="panel-label">压到多大</div>
+              <div class="panel-caption">全队共用一个参考目标</div>
+            </div>
+            <span class="target-unit">MB</span>
+          </div>
+          <label class="mb-field queue-mb">
+            <input type="number" id="queueTarget" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="没填则各为原片一半" aria-label="批量参考目标，留空则每支为原片一半" />
+            <span>MB</span>
+          </label>
+          <div class="hint" id="queueTargetHint">留空时，每支用自己原大小的一半（四舍五入到整数 MB）作为参考目标。</div>
+        </div>
+        <div class="queue-list" id="queueList"></div>
+        <div class="actions">
+          <button class="btn btn-secondary" id="queueBack" type="button">返回</button>
+          <button class="btn btn-secondary" id="queueAdd" type="button">添加视频</button>
+          <button class="btn btn-danger hidden" id="queueCancelAll" type="button">取消全部</button>
+          <button class="btn btn-secondary hidden" id="queueRetryFailed" type="button">重试全部失败</button>
+          <button class="btn btn-primary" id="queueStart" type="button">开始压缩</button>
+        </div>
       </section>
 
       <section class="screen" id="screen-work">
@@ -181,8 +216,8 @@
 
     <div class="overlay" id="confirmOverlay">
       <div class="dialog">
-        <h3>确定取消压缩？</h3>
-        <p>压缩还没完成。未完成的临时文件会被清理，原片不会改动。再次开始会从头编码。</p>
+        <h3 id="confirmTitle">确定取消压缩？</h3>
+        <p id="confirmText">压缩还没完成。未完成的临时文件会被清理，原片不会改动。再次开始会从头编码。</p>
         <div class="dialog-actions">
           <button class="btn btn-secondary" id="confirmNo" type="button">再想想</button>
           <button class="btn btn-primary" id="confirmYes" type="button">确定取消</button>
