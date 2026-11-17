@@ -1,7 +1,9 @@
 import type { AnalysisProgress, AppScreen, DoneEvent, FailEvent, LicenseState, ProbeInfo, ProgressEvent, QualityAnalysis, UpdateCheckResult } from "../shared/types";
 import { MSG } from "../shared/messages";
 import { suggestedOutputName } from "../shared/filename";
+import { MEDIA_SCHEME, isOutputPreviewUrl } from "../shared/preview-url";
 import { fitOutput, outputLabel } from "../shared/scale";
+import { clearPreviewVideo, donePreviewView, firstFrameNudge, type DonePreviewAvailability } from "./done-preview";
 import { doneSubtitle } from "./done-sub";
 import { $, formatDuration, formatElapsed, formatMB, formatRemainDetail, toast } from "./dom";
 import { createQueueController, type QueueController } from "./queue-ui";
@@ -24,8 +26,15 @@ let availableUpdate: Extract<UpdateCheckResult, { status: "available" }> | null 
 let dismissedUpdate: string | null = null;
 let workTimer: number | null = null;
 let workOrigin = 0;
+let previewEpoch = 0;
+let previewUrl: string | null = null;
+let previewAvailability: DonePreviewAvailability | "idle" = "idle";
+let previewLoaded = false;
+let previewPlayed = false;
+let previewErrored = false;
 
 function setScreen(id: AppScreen): void {
+  if (screen === "screen-done" && id !== "screen-done") releaseDonePreview();
   screen = id;
   showScreen(id);
   renderUpdateNotice();
@@ -535,6 +544,134 @@ function onProgress(ev: ProgressEvent): void {
   setBar("singleBar", ev.percent);
 }
 
+function doneVideo(): HTMLVideoElement {
+  return $("donePreview") as HTMLVideoElement;
+}
+
+function applyDonePreview(): void {
+  if (previewAvailability === "idle") return;
+  const view = donePreviewView({
+    availability: previewAvailability,
+    loaded: previewLoaded,
+    played: previewPlayed,
+    errored: previewErrored,
+  });
+  const video = doneVideo();
+  const status = $("donePreviewStatus");
+  video.classList.toggle("is-hidden", !view.showVideo);
+  status.classList.toggle("hidden", view.message == null);
+  status.classList.toggle("is-overlay", view.phase === "interrupted");
+  $("donePreviewMsg").textContent = view.message ?? "";
+  $("donePreviewRetry").classList.toggle("hidden", !view.canRetry || !previewUrl);
+}
+
+function paintFirstFrame(video: HTMLVideoElement, epoch: number): void {
+  const paint = () => {
+    if (epoch !== previewEpoch || !video.paused || video.currentTime > 0.05) return;
+    const nudge = firstFrameNudge(video.duration);
+    if (nudge == null) return;
+    const onSeeked = () => {
+      if (epoch !== previewEpoch || !video.paused) return;
+      if (video.currentTime > 0 && video.currentTime <= nudge + 0.0001) video.currentTime = 0;
+    };
+    video.addEventListener("seeked", onSeeked, { once: true });
+    try {
+      video.currentTime = nudge;
+    } catch {
+      video.removeEventListener("seeked", onSeeked);
+    }
+  };
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) paint();
+  else video.addEventListener("loadeddata", paint, { once: true });
+}
+
+function releaseDonePreview(): void {
+  previewEpoch += 1;
+  previewUrl = null;
+  previewAvailability = "idle";
+  previewLoaded = false;
+  previewPlayed = false;
+  previewErrored = false;
+  const video = doneVideo();
+  video.dataset.previewEpoch = "";
+  clearPreviewVideo(video);
+  video.classList.add("is-hidden");
+  $("donePreviewStatus").classList.add("hidden");
+  $("donePreviewStatus").classList.remove("is-overlay");
+  $("donePreviewRetry").classList.add("hidden");
+  void api.releaseOutputPreview().catch(() => undefined);
+}
+
+async function showDonePreview(outputPath: string): Promise<void> {
+  const epoch = ++previewEpoch;
+  previewUrl = null;
+  previewAvailability = "checking";
+  previewLoaded = false;
+  previewPlayed = false;
+  previewErrored = false;
+  const video = doneVideo();
+  video.dataset.previewEpoch = "";
+  clearPreviewVideo(video);
+  video.dataset.previewEpoch = String(epoch);
+  applyDonePreview();
+  let issued: string | null = null;
+  try {
+    issued = await api.acquireOutputPreview(outputPath);
+  } catch {
+    issued = null;
+  }
+  if (epoch !== previewEpoch) return;
+  if (!issued || !isOutputPreviewUrl(issued)) {
+    previewAvailability = issued ? "ready" : "missing";
+    previewErrored = Boolean(issued);
+    previewUrl = null;
+    if (issued) void api.releaseOutputPreview().catch(() => undefined);
+    applyDonePreview();
+    return;
+  }
+  previewUrl = issued;
+  previewAvailability = "ready";
+  video.src = issued;
+  paintFirstFrame(video, epoch);
+  applyDonePreview();
+}
+
+function retryDonePreview(): void {
+  if (!previewUrl || !isOutputPreviewUrl(previewUrl) || screen !== "screen-done") return;
+  const epoch = ++previewEpoch;
+  previewLoaded = false;
+  previewPlayed = false;
+  previewErrored = false;
+  previewAvailability = "ready";
+  const video = doneVideo();
+  video.dataset.previewEpoch = String(epoch);
+  video.pause();
+  video.src = previewUrl;
+  video.load();
+  paintFirstFrame(video, epoch);
+  applyDonePreview();
+}
+
+function onPreviewMediaEvent(kind: "loaded" | "playing" | "error"): void {
+  const video = doneVideo();
+  if (video.dataset.previewEpoch !== String(previewEpoch)) return;
+  if (previewAvailability !== "ready" || !previewUrl) return;
+  if (!video.currentSrc.startsWith(`${MEDIA_SCHEME}:`)) return;
+  if (kind === "playing") {
+    previewPlayed = true;
+    return;
+  }
+  if (kind === "loaded") {
+    if (previewErrored) return;
+    previewLoaded = true;
+    applyDonePreview();
+    return;
+  }
+  previewErrored = true;
+  try { video.pause(); } catch { /* the element is already stopped */ }
+  applyDonePreview();
+}
+
 function onDone(ev: DoneEvent): void {
   stopWorkTimer();
   working = false;
@@ -555,6 +692,7 @@ function onDone(ev: DoneEvent): void {
   $("donePath").textContent = ev.outputPath;
   setScreen("screen-done");
   refreshRecent();
+  void showDonePreview(ev.outputPath);
 }
 
 function onFail(ev: FailEvent): void {
@@ -727,6 +865,12 @@ function bind(): void {
     $("confirmOverlay").classList.remove("show");
     confirmAction();
   });
+
+  const preview = doneVideo();
+  preview.addEventListener("loadeddata", () => onPreviewMediaEvent("loaded"));
+  preview.addEventListener("playing", () => onPreviewMediaEvent("playing"));
+  preview.addEventListener("error", () => onPreviewMediaEvent("error"));
+  $("donePreviewRetry").addEventListener("click", () => retryDonePreview());
 
   $("againBtn").addEventListener("click", () => goIdle());
   $("openFileBtn").addEventListener("click", () => {

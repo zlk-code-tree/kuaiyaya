@@ -27,6 +27,8 @@ const api: KuaiyayaAPI = {
   onCompressFail: (cb) => on<FailEvent>("compress-fail", cb),
   openFile: (filePath) => ipcRenderer.invoke("open-file", filePath),
   revealInFinder: (filePath) => ipcRenderer.invoke("reveal-in-finder", filePath),
+  acquireOutputPreview: (outputPath) => ipcRenderer.invoke("acquire-output-preview", outputPath),
+  releaseOutputPreview: () => ipcRenderer.invoke("release-output-preview"),
   license: {
     getState: () => ipcRenderer.invoke("license-get-state"),
     activate: (key) => ipcRenderer.invoke("license-activate", key),

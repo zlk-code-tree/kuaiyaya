@@ -164,6 +164,8 @@ export interface KuaiyayaAPI {
   onCompressFail(cb: (e: FailEvent) => void): () => void;
   openFile(filePath: string): Promise<void>;
   revealInFinder(filePath: string): Promise<void>;
+  acquireOutputPreview(outputPath: string): Promise<string | null>;
+  releaseOutputPreview(): Promise<void>;
   license: {
     getState(): Promise<LicenseState>;
     activate(key: string): Promise<LicenseResult>;
