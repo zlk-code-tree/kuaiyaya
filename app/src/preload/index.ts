@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { QueueRetryRequest, QueueSnapshot, QueueStartRequest } from "../shared/queue";
 import type { KuaiyayaAPI, LicenseState, ProgressEvent, DoneEvent, FailEvent, AnalysisProgress } from "../shared/types";
 
 function on<T>(channel: string, cb: (e: T) => void): () => void {
@@ -9,6 +10,11 @@ function on<T>(channel: string, cb: (e: T) => void): () => void {
 
 const api: KuaiyayaAPI = {
   selectVideo: () => ipcRenderer.invoke("select-video"),
+  queueStart: (input: QueueStartRequest) => ipcRenderer.invoke("queue-start", input),
+  queueCancelItem: (id: string) => ipcRenderer.invoke("queue-cancel-item", id),
+  queueCancelAll: () => ipcRenderer.invoke("queue-cancel-all"),
+  queueRetry: (input: QueueRetryRequest) => ipcRenderer.invoke("queue-retry", input),
+  onQueueUpdate: (cb) => on<QueueSnapshot>("queue-update", cb),
   probe: (filePath) => ipcRenderer.invoke("probe", filePath),
   checkStartGuards: (input) => ipcRenderer.invoke("check-start-guards", input),
   startCompress: (input) => ipcRenderer.invoke("start-compress", input),

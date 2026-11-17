@@ -116,6 +116,65 @@
 }
 #screen-ready .panel { padding: 14px 18px 12px; }
 
+#screen-queue { min-height: 0; }
+#screen-queue .page-heading { margin-bottom: 8px; flex-shrink: 0; }
+#screen-queue .page-heading h2 { font-size: 20px; }
+#screen-queue .queue-target-panel { margin-top: 0; flex-shrink: 0; padding: 12px 14px 10px; }
+#screen-queue .queue-mb { margin-top: 10px; max-width: 320px; }
+#screen-queue .queue-mb input { width: 220px; text-align: left; font-weight: 500; }
+#screen-queue .queue-mb input::placeholder { color: #a39e90; font-weight: 400; font-size: 12px; }
+.queue-summary {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+.queue-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.queue-row {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.queue-row-top { display: flex; align-items: center; gap: 8px; }
+.queue-row .file-meta { flex: 1; min-width: 0; }
+.queue-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 650;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-secondary);
+}
+.queue-status.running { color: var(--blue); background: var(--blue-soft); }
+.queue-status.success { color: #248a3d; background: rgba(52, 199, 89, 0.12); }
+.queue-status.failed { color: var(--red); background: rgba(255, 59, 48, 0.1); }
+.queue-status.cancelled { color: var(--text-tertiary); }
+.queue-status.skipped { color: #9a5b00; background: #fff4e6; }
+.queue-note { margin-top: 4px; font-size: 11px; line-height: 1.45; color: var(--text-secondary); }
+.queue-note.warn { color: #9a5b00; }
+.queue-note.err { color: #c93400; }
+.queue-progress { margin-top: 6px; }
+.queue-progress .bar { height: 6px; }
+.queue-phase, .queue-time { margin-top: 4px; font-size: 11px; line-height: 1.4; color: var(--text-secondary); }
+.queue-row-actions { display: flex; justify-content: flex-end; gap: 2px; margin-top: 2px; }
+#screen-queue .actions { flex-shrink: 0; }
+
 #titleDuck { transform-origin: 50% 80%; }
 #titleDuck.duck-nod { animation: duck-nod 0.55s ease-out 1; }
 @keyframes duck-nod {

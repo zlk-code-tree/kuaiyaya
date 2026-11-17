@@ -35,6 +35,11 @@ export const MSG = {
   closeWhileWorkTitle: "确定取消压缩？",
   closeWhileWork:
     "压缩还没完成。未完成的临时文件会被清理，原片不会改动。再次开始会从头编码。",
+  queueSkipped: "原片已经不大于参考目标，已跳过。",
+  queueUnreadable: "无法读取该视频。原片没有改动。",
+  queueCloseTitle: "确定取消全部？",
+  queueCloseDetail:
+    "队列还没完成。确定后将停止当前压缩，未开始的标为已取消，并清理临时文件。原片不会改动，也不会留下半成品。",
 } as const;
 
 export const MAINTAINER = "黑曼巴的紫金王朝";

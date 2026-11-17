@@ -5,13 +5,9 @@ import { stat } from "node:fs/promises";
 import type { ProbeInfo } from "../../shared/types";
 import { displaySize } from "../../shared/scale";
 
+export { isLikelyVideoPath } from "../../shared/video-ext";
+
 const execFileAsync = promisify(execFile);
-
-const EXT_OK = new Set([".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi"]);
-
-export function isLikelyVideoPath(filePath: string): boolean {
-  return EXT_OK.has(extname(filePath).toLowerCase());
-}
 
 interface FfprobeJson {
   format?: { format_name?: string; duration?: string };

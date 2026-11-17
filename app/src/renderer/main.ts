@@ -4,12 +4,14 @@ import { suggestedOutputName } from "../shared/filename";
 import { fitOutput, outputLabel } from "../shared/scale";
 import { doneSubtitle } from "./done-sub";
 import { $, formatDuration, formatElapsed, formatMB, formatRemainDetail, toast } from "./dom";
+import { createQueueController, type QueueController } from "./queue-ui";
 import { showScreen } from "./state/machine";
 import { applyInput, fromFileSize, tooLarge, type TargetState } from "./state/target-size";
 
 const api = window.kuaiyaya;
 
 let screen: AppScreen = "screen-key";
+let queue!: QueueController;
 let license: LicenseState | null = null;
 let probe: ProbeInfo | null = null;
 let target: TargetState | null = null;
@@ -31,7 +33,8 @@ function setScreen(id: AppScreen): void {
 
 function renderUpdateNotice(): void {
   const notice = $("updateNotice");
-  const visible = availableUpdate && availableUpdate.version !== dismissedUpdate && !working && !analyzing && screen !== "screen-work";
+  const queueRunning = queue.isRunning();
+  const visible = availableUpdate && availableUpdate.version !== dismissedUpdate && !working && !analyzing && !queueRunning && screen !== "screen-work";
   notice.classList.toggle("hidden", !visible);
   if (visible && availableUpdate) notice.textContent = `发现新版本 ${availableUpdate.version}`;
   $("aboutUpdateDetails").classList.toggle("hidden", !availableUpdate);
@@ -64,7 +67,7 @@ async function checkUpdates(manual: boolean): Promise<void> {
 
 function showUpdate(): void {
   if (!availableUpdate) return;
-  if (analyzing || working || screen === "screen-work") {
+  if (analyzing || working || queue.isRunning() || screen === "screen-work") {
     $("aboutUpdateStatus").textContent = "压缩或分析完成后可查看更新";
     return;
   }
@@ -96,6 +99,7 @@ function applyLicense(s: LicenseState): void {
     setScreen("screen-key");
   }
   syncStartButton();
+  queue.syncStartButton();
 }
 
 function syncStartButton(): void {
@@ -201,7 +205,7 @@ function onAnalysisProgress(event: AnalysisProgress): void {
 }
 
 async function onAnalyze(): Promise<void> {
-  if (!probe || !target || working || analyzing || $("analysisOverlay").classList.contains("show")) return;
+  if (!probe || !target || working || analyzing || queue.isRunning() || $("analysisOverlay").classList.contains("show")) return;
   if (tooLarge(target)) {
     showAlert("无法分析", MSG.targetTooLarge);
     return;
@@ -254,28 +258,26 @@ function fillFileCard(): void {
   $("workSub").textContent = sub;
 }
 
-async function loadFile(filePath: string): Promise<void> {
-  if (working || analyzing) return;
-  if (license && !license.hasStoredKey) {
-    setScreen("screen-key");
-    return;
-  }
-  try {
-    probe = await api.probe(filePath);
-    qualityAnalysis = null;
-    target = fromFileSize(probe.sizeBytes);
-    fillFileCard();
-    renderTarget();
-    setScreen("screen-ready");
-  } catch (err) {
-    showAlert("无法打开文件", err instanceof Error ? err.message : MSG.unsupported);
-  }
+function showReady(info: ProbeInfo): void {
+  probe = info;
+  qualityAnalysis = null;
+  target = fromFileSize(info.sizeBytes);
+  fillFileCard();
+  renderTarget();
+  setScreen("screen-ready");
 }
 
-async function chooseFile(): Promise<void> {
-  if (working || analyzing) return;
-  const p = await api.selectVideo();
-  if (p) await loadFile(p);
+function goIdle(): void {
+  probe = null;
+  target = null;
+  qualityAnalysis = null;
+  setScreen("screen-idle");
+}
+
+async function chooseFile(mode: "add" | "replace" = "add"): Promise<void> {
+  if (working || analyzing || queue.isRunning()) return;
+  const paths = await api.selectVideo();
+  if (paths.length > 0) await queue.ingest(paths, mode);
 }
 
 function showAlert(title: string, text: string, extra?: { reenter?: boolean }): void {
@@ -350,7 +352,7 @@ async function onActivate(): Promise<void> {
 }
 
 async function onStart(): Promise<void> {
-  if (!probe || !target || analyzing || $("analysisOverlay").classList.contains("show")) return;
+  if (!probe || !target || analyzing || queue.isRunning() || $("analysisOverlay").classList.contains("show")) return;
   if (tooLarge(target)) {
     showAlert("无法开始压缩", MSG.targetTooLarge);
     return;
@@ -587,7 +589,33 @@ async function openAbout(): Promise<void> {
   $("aboutOverlay").classList.add("show");
 }
 
+let confirmAction: () => void = () => undefined;
+
+function askConfirm(title: string, text: string, yes: string, action: () => void): void {
+  $("confirmTitle").textContent = title;
+  $("confirmText").textContent = text;
+  $("confirmYes").textContent = yes;
+  confirmAction = action;
+  $("confirmOverlay").classList.add("show");
+}
+
 function bind(): void {
+  queue = createQueueController({
+    api,
+    getScreen: () => screen,
+    setScreen,
+    currentProbe: () => probe,
+    openSingle: showReady,
+    goIdle,
+    hasLicense: () => license == null || license.hasStoredKey,
+    license: () => license ? Promise.resolve(license) : api.license.getState(),
+    isSingleBusy: () => working || analyzing,
+    showAlert,
+    handleStartError,
+    askConfirm,
+    onActivity: () => renderUpdateNotice(),
+  });
+  queue.mount();
   document.addEventListener("keydown", (event) => {
     if (!$('updateOverlay').classList.contains("show")) return;
     if (event.key === "Escape") { event.preventDefault(); dismissUpdate(); return; }
@@ -651,7 +679,7 @@ function bind(): void {
       void chooseFile();
     }
   });
-  $("replaceBtn").addEventListener("click", () => void chooseFile());
+  $("replaceBtn").addEventListener("click", () => void chooseFile("replace"));
   $("startBtn").addEventListener("click", () => void onStart());
   $("analyzeBtn").addEventListener("click", () => void onAnalyze());
   $("analysisCancel").addEventListener("click", () => {
@@ -689,19 +717,18 @@ function bind(): void {
     renderTarget();
   });
 
-  $("cancelBtn").addEventListener("click", () => $("confirmOverlay").classList.add("show"));
+  $("cancelBtn").addEventListener("click", () => {
+    askConfirm(MSG.closeWhileWorkTitle, MSG.closeWhileWork, "确定取消", () => {
+      void api.cancelCompress();
+    });
+  });
   $("confirmNo").addEventListener("click", () => $("confirmOverlay").classList.remove("show"));
   $("confirmYes").addEventListener("click", () => {
     $("confirmOverlay").classList.remove("show");
-    void api.cancelCompress();
+    confirmAction();
   });
 
-  $("againBtn").addEventListener("click", () => {
-    probe = null;
-    target = null;
-    qualityAnalysis = null;
-    setScreen("screen-idle");
-  });
+  $("againBtn").addEventListener("click", () => goIdle());
   $("openFileBtn").addEventListener("click", () => {
     if (lastOutput) void api.openFile(lastOutput).catch((e: Error) => showAlert("无法打开", e.message));
   });
@@ -714,12 +741,7 @@ function bind(): void {
   $("recentFolderBtn").addEventListener("click", () => {
     if (lastOutput) void api.revealInFinder(lastOutput).catch((e: Error) => showAlert("无法打开", e.message));
   });
-  $("failHomeBtn").addEventListener("click", () => {
-    probe = null;
-    target = null;
-    qualityAnalysis = null;
-    setScreen("screen-idle");
-  });
+  $("failHomeBtn").addEventListener("click", () => goIdle());
   $("retryBtn").addEventListener("click", () => {
     if (probe && target) {
       setScreen("screen-ready");
@@ -731,22 +753,30 @@ function bind(): void {
 
   window.addEventListener("dragover", (e) => {
     e.preventDefault();
-    if (working || analyzing) return;
-    $("dropzone").classList.add("dragover");
+    if (working || analyzing || queue.isRunning()) return;
+    if (screen === "screen-idle" || screen === "screen-ready") $("dropzone").classList.add("dragover");
   });
   window.addEventListener("dragleave", () => $("dropzone").classList.remove("dragover"));
   window.addEventListener("drop", (e) => {
     e.preventDefault();
     $("dropzone").classList.remove("dragover");
     if (working || analyzing) return;
-    const file = e.dataTransfer?.files[0];
-    if (!file) return;
-    try {
-      const p = api.resolveDropPath(file);
-      if (p) void loadFile(p);
-    } catch {
-      showAlert("无法打开文件", MSG.unsupported);
+    const files = [...(e.dataTransfer?.files ?? [])];
+    if (files.length === 0) return;
+    const paths: string[] = [];
+    for (const file of files) {
+      try {
+        const filePath = api.resolveDropPath(file);
+        if (filePath) paths.push(filePath);
+      } catch {
+        /* 单个文件拿不到路径时忽略，其余继续 */
+      }
     }
+    if (paths.length === 0) {
+      showAlert("无法打开文件", MSG.unsupported);
+      return;
+    }
+    void queue.ingest(paths, "add");
   });
 
   api.onCompressProgress(onProgress);

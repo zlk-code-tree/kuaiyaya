@@ -58,6 +58,7 @@ describe("quality analysis IPC", () => {
       analyzer: { isRunning: false, run: runAnalysis, cancel: async () => {} },
       getFfmpeg: async () => ({ ffmpeg: "ffmpeg", ffprobe: "ffprobe" }),
       getCaps: async () => ({ x265: true, videotoolbox: true }),
+      queue: { isBusy: () => false },
     } as unknown as MainContext;
     registerIpc(ctx);
     await invoke("probe", path);
