@@ -57,7 +57,7 @@
           <h2>把视频交给快鸭鸭</h2>
           <p>拖入或选择视频，在本机轻松压缩</p>
           <div class="choose">选择视频 <span aria-hidden="true">↗</span></div>
-          <div class="dropzone-note">支持常见视频格式 · 文件不会上传</div>
+          <div class="dropzone-note">支持 MP4、MOV、M4V、MKV、WebM、AVI<br>可同时拖入多个文件排队压缩</div>
         </div>
         <div class="recent hidden" id="recentBox">
           <div class="meta"><div class="k">最近输出，可直接打开</div><div class="v" id="recentName">—</div></div>
@@ -69,7 +69,7 @@
       <section class="screen" id="screen-ready">
         <div class="wash faint" aria-hidden="true"></div>
         <div class="page-heading">
-          <div><div class="eyebrow">READY TO COMPRESS</div><h2>准备压缩</h2><p>设置你需要的大小，剩下的交给快鸭鸭。</p></div>
+          <div><div class="eyebrow">READY TO COMPRESS</div><h2>准备压缩</h2><p>留空按清晰度压，填了数字就是上限。</p></div>
           <span class="privacy-badge"><span></span> 本机处理</span>
         </div>
         <div class="file-card">
@@ -78,19 +78,19 @@
           <button class="linkish" id="replaceBtn" type="button">更换视频</button>
         </div>
         <div class="panel">
-          <div class="target-heading"><div><div class="panel-label">目标大小</div><div class="panel-caption">按需要调整，越小可能损失越多细节</div></div><span class="target-unit">MB</span></div>
+          <div class="target-heading"><div><div class="panel-label">压到多大</div><div class="panel-caption" id="targetCaption">没填则按清晰度自动压</div></div><span class="target-unit">MB</span></div>
           <div class="target-row">
-            <input type="range" id="sizeSlider" aria-label="目标大小" min="8" max="100" value="50" />
-            <label class="mb-field"><input type="number" id="sizeInput" aria-label="目标大小，MB" min="1" step="1" /><span>MB</span></label>
+            <input type="range" id="sizeSlider" class="is-unset" aria-label="上限大小，留空时停用" aria-valuetext="未填写" min="1" max="100" disabled />
+            <label class="mb-field"><input type="number" id="sizeInput" aria-label="压到多大，MB，留空则按清晰度自动压" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="没填则按清晰度自动压到尽量小" /><span>MB</span></label>
           </div>
-          <div class="hint" id="targetHint">—</div>
+          <div class="hint" id="targetHint">没填时，按清晰度估算这支视频在保证画质下能压到多小，再按这个结果压。1080p 及以下不缩小，更高分辨率长边不超过 1920。</div>
           <div class="analysis-summary hidden" id="analysisSummary" aria-live="polite"></div>
           <div class="banner hidden" id="targetBanner">原片已经不大于目标大小，无需压缩。请调低目标后再开始。</div>
           <div class="out-rule" id="outRule">输出 HEVC（H.265）mp4，大尺寸视频会按比例缩小，不放大。默认与原片保存在同一目录。</div>
         </div>
         <div class="quality-callout">
           <div class="quality-mark" aria-hidden="true">✦</div>
-          <div class="quality-copy"><strong>画质先看看</strong><span>本机抽样试压，帮你选择合适的大小</span></div>
+          <div class="quality-copy"><strong>画质先看看</strong><span>抽样估计按清晰度大约能压到多少，不会自动填进「压到多大」</span></div>
           <button class="btn btn-secondary" id="analyzeBtn" type="button">分析画质</button>
         </div>
         <div class="actions"><button class="btn btn-primary start-button" id="startBtn" type="button">开始压缩</button></div>
@@ -111,15 +111,15 @@
           <div class="target-heading">
             <div>
               <div class="panel-label">压到多大</div>
-              <div class="panel-caption">全队共用一个参考目标</div>
+              <div class="panel-caption" id="queueTargetCaption">每支按清晰度自动压</div>
             </div>
             <span class="target-unit">MB</span>
           </div>
           <label class="mb-field queue-mb">
-            <input type="number" id="queueTarget" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="没填则各为原片一半" aria-label="批量参考目标，留空则每支为原片一半" />
+            <input type="number" id="queueTarget" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="没填则各按清晰度自动压到尽量小" aria-label="批量上限，留空则各按清晰度自动压" />
             <span>MB</span>
           </label>
-          <div class="hint" id="queueTargetHint">留空时，每支用自己原大小的一半（四舍五入到整数 MB）作为参考目标。</div>
+          <div class="hint" id="queueTargetHint">留空时，每支按清晰度优先估算能压到多小，再按这个结果压。</div>
         </div>
         <div class="queue-list" id="queueList"></div>
         <div class="actions">
@@ -243,8 +243,8 @@
         <p id="analysisNote" class="analysis-note hidden"></p>
         <div class="dialog-actions">
           <button class="btn btn-secondary" id="analysisCancel" type="button">取消分析</button>
-          <button class="btn btn-secondary hidden" id="analysisClose" type="button">保留当前目标</button>
-          <button class="btn btn-primary hidden" id="analysisApply" type="button">使用建议目标</button>
+          <button class="btn btn-secondary hidden" id="analysisClose" type="button">关闭</button>
+          <button class="btn btn-primary hidden" id="analysisApply" type="button">用作上限</button>
         </div>
       </div>
     </div>

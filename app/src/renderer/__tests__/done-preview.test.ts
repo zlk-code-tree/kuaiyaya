@@ -56,12 +56,13 @@ describe("done page preview state", () => {
     });
     expect(PREVIEW_UNPLAYABLE).toBe("此预览无法在应用内播放，可用「打开文件」用系统播放器查看。");
     const subtitle = doneSubtitle({
-      exceededTarget: true,
+      qualityReduced: true,
       usedAnalysis: false,
       encoder: "x265",
       analysisEncoder: null,
     });
-    expect(subtitle).toBe("实际体积超出了参考目标。");
+    expect(subtitle).toContain("已压到目标上限以内");
+    expect(subtitle).not.toContain("实际体积超出了参考目标");
     expect(view.message).not.toContain(subtitle);
     expect(view.message).not.toContain("压缩失败");
   });

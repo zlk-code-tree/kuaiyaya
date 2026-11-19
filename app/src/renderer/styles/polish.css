@@ -66,7 +66,7 @@
 .dropzone p { margin-top: 9px; color: #8a877c; font-size: 13px; }
 .dropzone .choose { margin-top: 22px; min-width: 132px; padding: 11px 18px; border-radius: 10px; background: #28251e; color: #fffdf6; font-size: 13px; font-weight: 650; box-shadow: 0 5px 13px rgba(42,35,20,.12); }
 .dropzone .choose span { margin-left: 10px; color: #f3cf60; }
-.dropzone-note { margin-top: 14px; color: #aaa69c; font-size: 11px; }
+.dropzone-note { margin-top: 14px; color: #aaa69c; font-size: 11px; line-height: 1.6; text-align: center; }
 .recent:not(.hidden) { display: flex; }
 .recent { border-radius: 12px; }
 
@@ -89,6 +89,8 @@
 .target-row { margin-top: 15px; gap: 18px; }
 input[type="range"] { height: 5px; background: #eee9dc; }
 input[type="range"]::-webkit-slider-thumb { width: 18px; height: 18px; background: #f4c941; border: 3px solid #fff; box-shadow: 0 0 0 1px #dbb13d, 0 2px 5px rgba(75,54,3,.16); }
+input[type="range"]:disabled { opacity: 0.4; }
+input[type="range"].is-unset::-webkit-slider-thumb { opacity: 0; width: 0; height: 0; border: 0; box-shadow: none; pointer-events: none; }
 .mb-field { background: #f8f7f2; border: 1px solid #eeece4; border-radius: 9px; }
 .mb-field input { width: 78px; color: var(--text); font-size: 14px; }
 .hint { color: #8b887d; font-size: 11px; line-height: 1.5; }

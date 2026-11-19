@@ -49,7 +49,7 @@ beforeEach(() => {
   calls.length = 0;
 });
 
-it("asks the sample encode for bitrate mode instead of the default quality pass", async () => {
+it("encodes the sample with the quality-first command and does not fill a cap", async () => {
   const dir = await mkdtemp(join(tmpdir(), "kuaiyaya-mode-"));
   try {
     const input = join(dir, "input.mp4");
@@ -102,15 +102,14 @@ exit 0
       ffmpeg,
       ffprobe: "ffprobe",
       probe,
-      targetMB: 8,
       caps,
       onProgress: () => undefined,
     });
 
     expect(result.encoder).toBe("x265");
-    expect(calls.length).toBeGreaterThan(0);
-    expect(calls.every((call) => call.mode === "bitrate")).toBe(true);
-    expect(calls.every((call) => typeof call.videoBps === "number" && call.encoder === "x265")).toBe(true);
+    expect(result.estimatedMB).toBeGreaterThan(0);
+    expect(calls).toHaveLength(1);
+    expect(calls.every((call) => call.mode === "quality" && call.encoder === "x265" && call.videoBps == null)).toBe(true);
     expect((await stat(input)).size).toBe(probe.sizeBytes);
   } finally {
     await rm(dir, { recursive: true, force: true });

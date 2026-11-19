@@ -35,7 +35,9 @@ export const MSG = {
   closeWhileWorkTitle: "确定取消压缩？",
   closeWhileWork:
     "压缩还没完成。未完成的临时文件会被清理，原片不会改动。再次开始会从头编码。",
-  queueSkipped: "原片已经不大于参考目标，已跳过。",
+  queueSkipped: "原片已经不大于上限，已跳过。",
+  notSmaller: "压缩后体积未小于原片，未保存结果；原片没有改动。",
+  missedCap: "未能压到目标体积，未保存结果；原片没有改动。",
   queueUnreadable: "无法读取该视频。原片没有改动。",
   queueCloseTitle: "确定取消全部？",
   queueCloseDetail:

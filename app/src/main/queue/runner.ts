@@ -2,7 +2,6 @@ import type { DoneEvent, FailEvent, ProbeInfo, ProgressEvent } from "../../share
 import type { StartDecision } from "../../shared/license-machine";
 import { MSG } from "../../shared/messages";
 import {
-  itemTargetMB,
   targetSkipsItem,
   type QueueItemSnapshot,
   type QueuePhase,
@@ -34,7 +33,7 @@ export interface QueueRunHooks {
 export interface BatchQueueDeps {
   /** 一轮开始时调用一次。通过后，本轮剩余条目和重试都不再调用。 */
   decideStart: () => Promise<StartDecision>;
-  prepare: (item: { id: string; filePath: string; targetMB: number }) => Promise<PrepareResult>;
+  prepare: (item: { id: string; filePath: string; targetMB: number | null }) => Promise<PrepareResult>;
   /** 必须走现有 CompressJob（或测试替身），不要在队列里另写编码。 */
   runJob: (item: QueueItemSnapshot, probe: ProbeInfo, hooks: QueueRunHooks) => Promise<void>;
   cancelJob: () => Promise<void>;
@@ -42,7 +41,8 @@ export interface BatchQueueDeps {
 }
 
 function seed(input: QueueStartItem): QueueItemSnapshot {
-  const targetMB = Number.isFinite(input.targetMB) ? Math.round(input.targetMB) : itemTargetMB(input.sizeBytes, null);
+  const rounded = input.targetMB == null ? null : Math.round(input.targetMB);
+  const targetMB = rounded != null && rounded >= 1 ? rounded : null;
   return {
     id: input.id,
     filePath: input.filePath,
@@ -57,7 +57,7 @@ function seed(input: QueueStartItem): QueueItemSnapshot {
     outputPath: null,
     outputBytes: null,
     inputBytes: null,
-    exceededTarget: false,
+    qualityReduced: false,
     elapsedSec: null,
     encoder: null,
     progress: null,
@@ -195,7 +195,7 @@ export class BatchQueue {
     item.outputPath = null;
     item.outputBytes = null;
     item.inputBytes = null;
-    item.exceededTarget = false;
+    item.qualityReduced = false;
     item.elapsedSec = null;
     item.encoder = null;
     this.items = this.items.filter((entry) => entry !== item).concat(item);
@@ -283,7 +283,7 @@ export class BatchQueue {
         item.outputPath = event.outputPath;
         item.outputBytes = event.outputBytes;
         item.inputBytes = event.inputBytes;
-        item.exceededTarget = event.exceededTarget;
+        item.qualityReduced = event.qualityReduced;
         item.elapsedSec = event.elapsedSec;
         item.encoder = event.encoder;
         item.message = "";
@@ -319,12 +319,10 @@ export class BatchQueue {
   }
 
   private summarize(): QueueSummary {
-    const summary: QueueSummary = { success: 0, failed: 0, cancelled: 0, skipped: 0, exceeded: 0 };
+    const summary: QueueSummary = { success: 0, failed: 0, cancelled: 0, skipped: 0 };
     for (const item of this.items) {
-      if (item.status === "success") {
-        summary.success += 1;
-        if (item.exceededTarget) summary.exceeded += 1;
-      } else if (item.status === "failed") summary.failed += 1;
+      if (item.status === "success") summary.success += 1;
+      else if (item.status === "failed") summary.failed += 1;
       else if (item.status === "cancelled") summary.cancelled += 1;
       else if (item.status === "skipped") summary.skipped += 1;
     }

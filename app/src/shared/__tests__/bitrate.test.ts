@@ -25,6 +25,8 @@ describe("target size defaults", () => {
     const { max } = sliderBounds(size);
     expect(max).toBe(39);
     expect(clampTargetMB(999, size)).toBe(39);
+    expect(clampTargetMB(Number.NaN, size)).toBe(sliderBounds(size).min);
+    expect(clampTargetMB(Number.NaN, size)).not.toBe(defaultTargetMB(size));
   });
 
   it("uses min = max(8, 5% of original MB)", () => {
@@ -72,5 +74,8 @@ describe("disk reserve", () => {
     expect(requiredDiskBytes(100)).toBe((100 + 200) * 1024 * 1024);
     expect(requiredDiskBytes(2000)).toBe((2000 + 400) * 1024 * 1024);
     expect(requiredDiskBytes(100, 800 * 1024 * 1024)).toBe((800 + 200) * 1024 * 1024);
+    expect(requiredDiskBytes(null, 800 * 1024 * 1024)).toBe((800 + 200) * 1024 * 1024);
+    expect(requiredDiskBytes(null, 50 * 1024 * 1024)).toBe((50 + 200) * 1024 * 1024);
+    expect(requiredDiskBytes(defaultTargetMB(50 * 1024 * 1024))).toBe((25 + 200) * 1024 * 1024);
   });
 });

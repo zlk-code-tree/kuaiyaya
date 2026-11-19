@@ -19,7 +19,7 @@ export function buildCommands(opts: {
   videoBps?: number;
   passLog?: string;
   nullSink?: string;
-  /** quality：默认压缩，只按清晰度压一轮。bitrate：试压按目标码率比较，保持两遍 ABR。 */
+  /** quality：清晰度优先一轮。bitrate：按上限收码率（硬编单遍 VBV，软编两遍 ABR）。 */
   mode?: "quality" | "bitrate";
 }): CommandPlan {
   const mode = opts.mode ?? "quality";
@@ -41,7 +41,7 @@ export function buildCommands(opts: {
 
   if (opts.encoder === "x265") {
     if (mode === "bitrate") {
-      // 两遍 ABR 锁定平均体积，放宽 VBV 峰值让复杂画面有 bit 可用。仅试压走这条路径。
+      // 两遍 ABR 锁定平均体积，放宽 VBV 峰值让复杂画面有 bit 可用。上限约束编码走这条路径。
       const maxrate = Math.floor(bps * 1.5);
       const bufsize = Math.floor(bps * 3);
       const passLog = opts.passLog ?? `${opts.output}.x265pass`;

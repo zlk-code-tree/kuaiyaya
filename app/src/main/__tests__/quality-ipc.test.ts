@@ -43,10 +43,7 @@ describe("quality analysis IPC", () => {
       videoCodec: "h264", hasAudio: false, container: "mp4",
     };
     result = {
-      filePath: path, encoder: "x265", metric: "ssim", sampleCount: 3, sampleDurationSec: 9,
-      candidates: [{ targetMB: 1, estimatedMB: 1, lowestScore: 0.95, averageScore: 0.96 },
-        { targetMB: 3, estimatedMB: 3, lowestScore: 0.98, averageScore: 0.98 }],
-      recommendedTargetMB: 3, meetsHeuristic: true,
+      filePath: path, encoder: "x265", sampleCount: 1, sampleDurationSec: 3, estimatedMB: 2.4,
     };
     runJob = vi.fn(async () => undefined);
     runAnalysis = vi.fn(async () => result);
