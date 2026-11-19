@@ -2,67 +2,66 @@ import { describe, expect, it } from "vitest";
 import { doneSubtitle } from "../done-sub";
 
 const trialNote = "输出文件已保存。实际编码参数与试压不同，请检查画质。";
+const saved = "输出文件已保存在原片同一目录";
+const reduced = "已压到目标上限以内。为达到这个体积，画质可能略低于按清晰度优先的结果。";
 
 describe("done page subtitle", () => {
-  it("splits the two notes onto separate lines and does not repeat 已保存", () => {
+  it("adds the quality-reduced note on its own line and does not say the result was saved again", () => {
     const text = doneSubtitle({
-      exceededTarget: true,
+      qualityReduced: true,
       usedAnalysis: true,
       encoder: "x265",
-      analysisEncoder: "x265",
+      analysisEncoder: "videotoolbox",
     });
-    expect(text).toBe(`实际体积超出了参考目标。\n${trialNote}`);
-    expect(text.split("\n")[0]).toBe("实际体积超出了参考目标。");
-    expect(text.split("\n")[0]).not.toContain("已保存");
-    expect(text.match(/已保存/g)).toEqual(["已保存"]);
-    expect(text).not.toContain("输出已保存");
+    expect(text).toBe(`${saved}\n${reduced}`);
+    expect(text.split("\n")[1]).not.toContain("已保存");
+    expect(text).not.toContain("输出文件已保存。");
+    expect(text).not.toContain("实际体积超出了参考目标");
+    expect(text).not.toContain(trialNote);
   });
 
-  it("notes the bitrate trial when the official encoder kind is unchanged", () => {
+  it("notes a trial only when the quality-first encoder differs", () => {
     expect(doneSubtitle({
-      exceededTarget: false,
+      qualityReduced: false,
+      usedAnalysis: true,
+      encoder: "x265",
+      analysisEncoder: "videotoolbox",
+    })).toBe(trialNote);
+    expect(doneSubtitle({
+      qualityReduced: false,
       usedAnalysis: true,
       encoder: "videotoolbox",
       analysisEncoder: "videotoolbox",
-    })).toBe(trialNote);
+    })).toBe(saved);
     expect(doneSubtitle({
-      exceededTarget: false,
+      qualityReduced: false,
       usedAnalysis: true,
       encoder: "x265",
       analysisEncoder: "x265",
-    })).toBe(trialNote);
-  });
-
-  it("still notes the trial when the encoder kind changes", () => {
-    expect(doneSubtitle({
-      exceededTarget: false,
-      usedAnalysis: true,
-      encoder: "x265",
-      analysisEncoder: "videotoolbox",
-    })).toBe(trialNote);
+    })).toBe(saved);
   });
 
   it("keeps the plain saved line when this result did not use a trial", () => {
     expect(doneSubtitle({
-      exceededTarget: false,
+      qualityReduced: false,
       usedAnalysis: false,
       encoder: "x265",
       analysisEncoder: "x265",
-    })).toBe("输出文件已保存在原片同一目录");
+    })).toBe(saved);
     expect(doneSubtitle({
-      exceededTarget: false,
+      qualityReduced: false,
       usedAnalysis: true,
       encoder: "x265",
       analysisEncoder: null,
-    })).toBe("输出文件已保存在原片同一目录");
+    })).toBe(saved);
   });
 
-  it("shows only the reference-target note when nothing was trialed", () => {
+  it("does not mention a reference target on a plain success", () => {
     expect(doneSubtitle({
-      exceededTarget: true,
+      qualityReduced: false,
       usedAnalysis: false,
       encoder: "videotoolbox",
       analysisEncoder: null,
-    })).toBe("实际体积超出了参考目标。");
+    })).toBe(saved);
   });
 });

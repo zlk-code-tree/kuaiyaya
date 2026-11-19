@@ -23,7 +23,7 @@ function probe(id: string, sizeMB: number): ProbeInfo {
   };
 }
 
-function source(id: string, sizeMB: number, targetMB: number): QueueStartItem {
+function source(id: string, sizeMB: number, targetMB: number | null): QueueStartItem {
   const info = probe(id, sizeMB);
   return {
     id,
@@ -37,15 +37,15 @@ function source(id: string, sizeMB: number, targetMB: number): QueueStartItem {
   };
 }
 
-function done(id: string, exceededTarget = false): DoneEvent {
+function done(id: string, qualityReduced = false): DoneEvent {
   return {
     outputPath: `/${id}-out.mp4`,
     inputBytes: 80 * 1024 * 1024,
-    outputBytes: exceededTarget ? 50 * 1024 * 1024 : 20 * 1024 * 1024,
+    outputBytes: qualityReduced ? 50 * 1024 * 1024 : 20 * 1024 * 1024,
     savedBytes: 1024,
     encoder: "x265",
-    retried: false,
-    exceededTarget,
+    retried: qualityReduced,
+    qualityReduced,
     elapsedSec: 4,
   };
 }
@@ -80,7 +80,7 @@ function harness(runJob: BatchQueueDeps["runJob"], prepare?: BatchQueueDeps["pre
   const queue = new BatchQueue({
     decideStart,
     cancelJob,
-    prepare: prepare ?? (async (item) => ({ ok: true, probe: probe(item.id, item.targetMB > 0 ? 80 : 80) })),
+    prepare: prepare ?? (async (item) => ({ ok: true, probe: probe(item.id, 80) })),
     runJob,
   });
   return { queue, decideStart, cancelJob };
@@ -120,7 +120,9 @@ describe("batch queue", () => {
     expect(order).toEqual(["a", "b", "c"]);
     expect(queue.snapshot().items.map((item) => item.status)).toEqual(["success", "success", "success"]);
     expect(queue.snapshot().items.every((item) => item.progress == null)).toBe(true);
-    expect(queue.snapshot().summary).toMatchObject({ success: 3, failed: 0, cancelled: 0, exceeded: 1 });
+    expect(queue.snapshot().items.find((item) => item.id === "c")?.qualityReduced).toBe(true);
+    expect(queue.snapshot().summary).toMatchObject({ success: 3, failed: 0, cancelled: 0, skipped: 0 });
+    expect(queue.snapshot().summary).not.toHaveProperty("exceeded");
     expect(decideStart).toHaveBeenCalledTimes(1);
   });
 
@@ -276,7 +278,7 @@ describe("batch queue", () => {
     expect(decideStart).toHaveBeenCalledTimes(1);
   });
 
-  it("skips only the item that is not larger than its reference target", async () => {
+  it("skips only the item that is not larger than a filled limit", async () => {
     const order: string[] = [];
     const { queue } = harness(
       async (item, _probe, hooks) => {
@@ -308,5 +310,29 @@ describe("batch queue", () => {
     expect(allowed.ok).toBe(true);
     expect(runJob).toHaveBeenCalledTimes(2);
     expect(decideStart).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not skip when the limit is empty, and still summarizes when every item is skipped", async () => {
+    const seen: Array<number | null> = [];
+    const open = harness(async (item, _probe, hooks) => {
+      seen.push(item.targetMB);
+      hooks.onDone(done(item.id));
+    });
+    await open.queue.start([source("a", 80, null), source("b", 10, null)]);
+    await open.queue.whenSettled();
+    expect(seen).toEqual([null, null]);
+    expect(open.queue.snapshot().items.map((item) => item.status)).toEqual(["success", "success"]);
+
+    const skipped = harness(
+      async () => {
+        throw new Error("skipped items must not be encoded");
+      },
+      async (item) => ({ ok: true, probe: probe(item.id, 10) }),
+    );
+    await skipped.queue.start([source("a", 10, 40), source("b", 10, 40)]);
+    await skipped.queue.whenSettled();
+    expect(skipped.queue.snapshot().items.map((item) => item.status)).toEqual(["skipped", "skipped"]);
+    expect(skipped.queue.snapshot().items.every((item) => item.message === MSG.queueSkipped)).toBe(true);
+    expect(skipped.queue.snapshot().summary).toMatchObject({ success: 0, failed: 0, cancelled: 0, skipped: 2 });
   });
 });

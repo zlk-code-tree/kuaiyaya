@@ -15,11 +15,12 @@ export function buildCommands(opts: {
   input: string;
   output: string;
   probe: ProbeInfo;
-  targetBytes: number;
+  /** 清晰度优先不按目标体积反推码率，可以不传。 */
+  targetBytes?: number;
   videoBps?: number;
   passLog?: string;
   nullSink?: string;
-  /** quality：默认压缩，只按清晰度压一轮。bitrate：试压按目标码率比较，保持两遍 ABR。 */
+  /** quality：清晰度优先，只按画质压一轮。bitrate：按上限的码率 / VBV 收体积。 */
   mode?: "quality" | "bitrate";
 }): CommandPlan {
   const mode = opts.mode ?? "quality";
@@ -27,11 +28,13 @@ export function buildCommands(opts: {
   const vf = scaleFilter(display);
   const bps =
     opts.videoBps ??
-    videoBitrateBps({
-      targetBytes: opts.targetBytes,
-      durationSec: opts.probe.durationSec,
-      hasAudio: opts.probe.hasAudio,
-    } satisfies BitrateInput);
+    (mode === "bitrate"
+      ? videoBitrateBps({
+          targetBytes: opts.targetBytes ?? 0,
+          durationSec: opts.probe.durationSec,
+          hasAudio: opts.probe.hasAudio,
+        } satisfies BitrateInput)
+      : 0);
   const commonIn = ["-hide_banner", "-y", "-i", opts.input, "-map", "0:v:0"];
   const audio = opts.probe.hasAudio
     ? (["-map", "0:a:0?", "-c:a", "aac", "-b:a", "128k"] as string[])
@@ -41,7 +44,7 @@ export function buildCommands(opts: {
 
   if (opts.encoder === "x265") {
     if (mode === "bitrate") {
-      // 两遍 ABR 锁定平均体积，放宽 VBV 峰值让复杂画面有 bit 可用。仅试压走这条路径。
+      // 两遍 ABR 锁定平均体积，放宽 VBV 峰值让复杂画面有 bit 可用。上限约束编码复用这条路径。
       const maxrate = Math.floor(bps * 1.5);
       const bufsize = Math.floor(bps * 3);
       const passLog = opts.passLog ?? `${opts.output}.x265pass`;

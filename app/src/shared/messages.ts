@@ -25,6 +25,8 @@ export const MSG = {
   emptyKey: "请输入 Key。",
   activated: "已开通，可以开始压缩。",
   targetTooLarge: "原片已经不大于目标大小，无需压缩。请调低目标后再开始。",
+  sizeNotSmaller: "压缩后体积未小于原片，未保存结果；原片没有改动。",
+  overLimit: "未能压到目标体积，未保存结果；原片没有改动。",
   diskLowPrefix: "开始压缩需要约 ",
   diskLowSuffix: " 的可用空间（含余量）。请清理磁盘后再试。",
   noWrite: "没有权限在原片所在目录写入输出文件。请检查文件夹权限后再试。",
@@ -35,7 +37,7 @@ export const MSG = {
   closeWhileWorkTitle: "确定取消压缩？",
   closeWhileWork:
     "压缩还没完成。未完成的临时文件会被清理，原片不会改动。再次开始会从头编码。",
-  queueSkipped: "原片已经不大于参考目标，已跳过。",
+  queueSkipped: "原片已经不大于上限，已跳过。",
   queueUnreadable: "无法读取该视频。原片没有改动。",
   queueCloseTitle: "确定取消全部？",
   queueCloseDetail:

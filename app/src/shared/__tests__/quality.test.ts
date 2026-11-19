@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { candidateTargets, estimateSizeMB, lowBitrateBudget, passesQualityHeuristic, preferSoftware, recommendCandidate, sampleRanges } from "../quality";
+import { candidateTargets, estimateSizeMB, lowBitrateBudget, passesQualityHeuristic, preferSoftware, recommendCandidate, roundEstimateMB, sampleRanges } from "../quality";
 import type { QualityCandidate } from "../types";
 
 const mib = 1024 * 1024;
@@ -12,6 +12,13 @@ describe("quality analysis planning", () => {
     expect(ranges.every((range) => range.startSec >= 0 && range.startSec + range.durationSec <= 100)).toBe(true);
     expect(sampleRanges(2)).toEqual([{ startSec: 0, durationSec: 2 }]);
     expect(sampleRanges(0)).toEqual([]);
+  });
+
+  it("rounds a sample extrapolation to an integer MB and never returns zero", () => {
+    expect(roundEstimateMB(12.4)).toBe(12);
+    expect(roundEstimateMB(12.5)).toBe(13);
+    expect(roundEstimateMB(0.2)).toBe(1);
+    expect(roundEstimateMB(Number.NaN)).toBe(1);
   });
 
   it("compares the chosen target to a larger candidate below the original", () => {

@@ -27,6 +27,12 @@ export function candidateTargets(targetMB: number, originalBytes: number): numbe
   return larger > targetMB ? [targetMB, larger] : [targetMB];
 }
 
+/** 样片外推体积收成整数 MB，供展示和「用作上限」。不回填到输入框。 */
+export function roundEstimateMB(estimatedMB: number): number {
+  if (!Number.isFinite(estimatedMB) || estimatedMB <= 0) return 1;
+  return Math.max(1, Math.round(estimatedMB));
+}
+
 /** 基于抽样视频体积外推，音频按最终编码的 128 kbps 估算。 */
 export function estimateSizeMB(
   sampleBytes: number,

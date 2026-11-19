@@ -1,5 +1,5 @@
 import { MSG } from "../shared/messages";
-import { itemTargetMB, queueSummaryLine, readSharedTarget, targetSkipsItem, type QueueItemSnapshot, type QueueSnapshot, type QueueStartItem } from "../shared/queue";
+import { queueCanStart, queueSummaryLine, readSharedTarget, targetLabel, targetSkipsItem, type QueueItemSnapshot, type QueueSnapshot, type QueueStartItem } from "../shared/queue";
 import type { AppScreen, LicenseState, ProbeInfo, ProgressEvent } from "../shared/types";
 import { isLikelyVideoPath } from "../shared/video-ext";
 import { doneSubtitle } from "./done-sub";
@@ -24,7 +24,7 @@ interface QueueDeps {
   getScreen: () => AppScreen;
   setScreen: (id: AppScreen) => void;
   currentProbe: () => ProbeInfo | null;
-  openSingle: (info: ProbeInfo) => void;
+  openSingle: (info: ProbeInfo, limitMB: number | null) => void;
   goIdle: () => void;
   hasLicense: () => boolean;
   license: () => Promise<LicenseState>;
@@ -80,6 +80,17 @@ export function createQueueController(deps: QueueDeps): QueueController {
   function sharedMB(): number | null {
     const read = readSharedTarget(targetField().value);
     return read.kind === "shared" ? read.mb : null;
+  }
+
+  function carryLimit(): number | null {
+    return deps.getScreen() === "screen-queue" ? sharedMB() : null;
+  }
+
+  function openOnly(info: ProbeInfo): void {
+    const limit = carryLimit();
+    drafts = [];
+    clearTargetField();
+    deps.openSingle(info, limit);
   }
 
   function clearTargetField(): void {
@@ -155,9 +166,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
       if (!only) return;
       if (only.probe) {
         if (deps.getScreen() === "screen-ready" && deps.currentProbe()?.path === only.filePath) return;
-        drafts = [];
-        clearTargetField();
-        deps.openSingle(only.probe);
+        openOnly(only.probe);
         return;
       }
       deps.showAlert("无法打开文件", only.error ?? MSG.queueUnreadable);
@@ -191,10 +200,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
     if (started || waitingKey) return;
     drafts = drafts.filter((item) => item.id !== id);
     if (drafts.length === 1 && drafts[0]?.probe) {
-      const info = drafts[0].probe;
-      drafts = [];
-      clearTargetField();
-      deps.openSingle(info);
+      openOnly(drafts[0].probe);
       return;
     }
     if (drafts.length <= 1) {
@@ -206,20 +212,15 @@ export function createQueueController(deps: QueueDeps): QueueController {
     render();
   }
 
-  function draftTarget(item: Draft): number | null {
-    if (!item.probe) return null;
+  function draftSkipped(item: Draft): boolean {
+    if (!item.probe) return false;
     const read = readSharedTarget(targetField().value);
-    if (read.kind === "invalid") return itemTargetMB(item.probe.sizeBytes, null);
-    return itemTargetMB(item.probe.sizeBytes, sharedMB());
+    if (read.kind !== "shared") return false;
+    return targetSkipsItem(read.mb, item.probe.sizeBytes);
   }
 
   function syncStartButton(): void {
     const button = $("queueStart") as HTMLButtonElement;
-    const read = readSharedTarget(targetField().value);
-    const runnable = drafts.some((item) => {
-      const target = draftTarget(item);
-      return item.probe != null && target != null && !targetSkipsItem(target, item.probe.sizeBytes);
-    });
     if (waitingKey) {
       button.disabled = true;
       button.classList.add("waiting");
@@ -228,20 +229,33 @@ export function createQueueController(deps: QueueDeps): QueueController {
     }
     button.classList.remove("waiting");
     button.textContent = "开始压缩";
-    button.disabled = started || read.kind === "invalid" || !runnable;
+    button.disabled = !queueCanStart({
+      started,
+      target: readSharedTarget(targetField().value),
+      items: drafts.map((item) => ({
+        readable: item.probe != null && !item.error,
+        sizeBytes: item.probe?.sizeBytes ?? 0,
+      })),
+    });
   }
 
   function renderHint(): void {
     const hint = $("queueTargetHint");
+    const caption = $("queueTargetCaption");
     const read = readSharedTarget(targetField().value);
     hint.classList.toggle("warn", read.kind === "invalid");
     if (read.kind === "invalid") {
-      hint.textContent = "请输入 1 以上的整数 MB，或清空后让每支按原片一半。";
+      caption.textContent = "请输入 1 以上的整数";
+      hint.textContent = "请输入 1 以上的整数 MB，或清空后按清晰度自动压。";
       return;
     }
-    hint.textContent = read.kind === "shared"
-      ? "全队都用这个参考目标。已经不大于目标的会跳过，不影响其余。"
-      : "留空时，每支用自己原大小的一半（四舍五入到整数 MB）作为参考目标。";
+    if (read.kind === "shared") {
+      caption.textContent = "全队共用这个上限";
+      hint.textContent = "全队都不超过这个上限。能压得更小就保留更小的，不会往大了凑。已经不大于上限的会跳过，不影响其余。";
+      return;
+    }
+    caption.textContent = "留空则各按清晰度自动压";
+    hint.textContent = "留空时，每支按清晰度优先估算能压到多小，再按这个结果压。";
   }
 
   function renderSummary(): void {
@@ -305,8 +319,8 @@ export function createQueueController(deps: QueueDeps): QueueController {
   }
 
   function renderDraftRow(item: Draft): HTMLElement {
-    const target = draftTarget(item);
-    const skipped = item.probe != null && target != null && targetSkipsItem(target, item.probe.sizeBytes);
+    const read = readSharedTarget(targetField().value);
+    const skipped = draftSkipped(item);
     const status = item.error ? "failed" : skipped ? "skipped" : "waiting";
     const row = document.createElement("div");
     row.className = "queue-row";
@@ -323,7 +337,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
       item.probe ? formatMB(item.probe.sizeBytes) : null,
       item.probe ? formatDuration(item.probe.durationSec) : null,
       item.probe ? `${item.probe.displayWidth}×${item.probe.displayHeight}` : null,
-      target != null ? `参考 ${target} MB` : null,
+      item.probe && read.kind !== "invalid" ? targetLabel(read.kind === "shared" ? read.mb : null) : null,
     ]) || "无法读取";
     meta.append(name, sub);
     const badge = document.createElement("span");
@@ -360,7 +374,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
       item.sizeBytes > 0 ? formatMB(item.sizeBytes) : null,
       item.durationSec > 0 ? formatDuration(item.durationSec) : null,
       item.displayWidth > 0 && item.displayHeight > 0 ? `${item.displayWidth}×${item.displayHeight}` : null,
-      `参考 ${item.targetMB} MB`,
+      targetLabel(item.targetMB),
       item.outputBytes != null ? `输出 ${formatMB(item.outputBytes)}` : null,
     ]);
     meta.append(name, sub);
@@ -372,9 +386,9 @@ export function createQueueController(deps: QueueDeps): QueueController {
     if (item.status === "running") renderProgress(row, item.progress);
     if (item.status === "success") {
       const note = document.createElement("div");
-      note.className = item.exceededTarget ? "queue-note warn" : "queue-note";
+      note.className = item.qualityReduced ? "queue-note warn" : "queue-note";
       note.textContent = doneSubtitle({
-        exceededTarget: item.exceededTarget,
+        qualityReduced: item.qualityReduced,
         usedAnalysis: false,
         encoder: item.encoder ?? "x265",
         analysisEncoder: null,
@@ -423,12 +437,12 @@ export function createQueueController(deps: QueueDeps): QueueController {
   }
 
   function payload(): QueueStartItem[] {
-    const mb = sharedMB();
+    const targetMB = sharedMB();
     return drafts.map((item) => ({
       id: item.id,
       filePath: item.filePath,
       name: item.probe?.name ?? baseName(item.filePath),
-      targetMB: item.probe ? itemTargetMB(item.probe.sizeBytes, mb) : 1,
+      targetMB,
       sizeBytes: item.probe?.sizeBytes ?? 0,
       durationSec: item.probe?.durationSec ?? 0,
       displayWidth: item.probe?.displayWidth ?? 0,
@@ -438,10 +452,15 @@ export function createQueueController(deps: QueueDeps): QueueController {
 
   async function onStart(): Promise<void> {
     if (started || waitingKey || deps.isSingleBusy()) return;
-    const read = readSharedTarget(targetField().value);
-    if (read.kind === "invalid") return;
+    if (!queueCanStart({
+      started: false,
+      target: readSharedTarget(targetField().value),
+      items: drafts.map((item) => ({
+        readable: item.probe != null && !item.error,
+        sizeBytes: item.probe?.sizeBytes ?? 0,
+      })),
+    })) return;
     const items = payload();
-    if (!items.some((item) => item.sizeBytes > 0 && !targetSkipsItem(item.targetMB, item.sizeBytes))) return;
     const state = await deps.license();
     if (!state.hasStoredKey) {
       deps.showAlert("尚未开通", "输入有效 Key 后才能开始压缩。不需要注册或登录。");

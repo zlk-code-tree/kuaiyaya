@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
-import { targetBytesFromMB } from "../../../shared/bitrate";
-import type { EncoderCaps, ProbeInfo } from "../../../shared/types";
+import { MSG } from "../../../shared/messages";
+import type { DoneEvent, EncoderCaps, ProbeInfo } from "../../../shared/types";
 import { CompressJob } from "../job";
 import { probeFile } from "../probe";
 import { resolveBinaries } from "../binary";
@@ -30,7 +30,7 @@ describe.skipIf(!hasFfmpeg)("libx265 quality pass", () => {
   it("finishes in one pass and saves a playable HEVC file smaller than the input", async () => {
     dir = await mkdtemp(join(tmpdir(), "kuaiyaya-cmp-"));
     const input = join(dir, "sample.mp4");
-    // 高码率原片，保证清晰度优先的一轮 CRF 结果仍小于原片；相对参考目标可大可小。
+    // 高码率原片，保证没填时的一轮清晰度优先结果仍小于原片。
     execFileSync(
       "ffmpeg",
       [
@@ -61,8 +61,6 @@ describe.skipIf(!hasFfmpeg)("libx265 quality pass", () => {
     const bins = await resolveBinaries();
     const probe: ProbeInfo = await probeFile(bins.ffprobe, input);
     const orig = (await stat(input)).size;
-    let targetMB = Math.max(1, Math.round(orig / (1024 * 1024) / 2));
-    if (targetMB * 1024 * 1024 >= orig) targetMB = 1;
     const caps: EncoderCaps = {
       x265: true,
       videotoolbox: false,
@@ -73,23 +71,24 @@ describe.skipIf(!hasFfmpeg)("libx265 quality pass", () => {
 
     const job = new CompressJob();
     const messages: string[] = [];
-    const done = await new Promise<{ outputPath: string; outputBytes: number; retried: boolean; exceededTarget: boolean }>((resolve, reject) => {
+    const done = await new Promise<DoneEvent>((resolve, reject) => {
       void job.run({
         ffmpegPath: bins.ffmpeg,
         probe,
-        targetMB,
+        targetMB: null,
         caps,
         hooks: {
           exists: (p) => existsSync(p),
           onProgress: (event) => messages.push(event.message),
-          onDone: (e) => resolve({ outputPath: e.outputPath, outputBytes: e.outputBytes, retried: e.retried, exceededTarget: e.exceededTarget }),
+          onDone: (event) => resolve(event),
           onFail: (e) => reject(new Error(e.message)),
         },
       });
     });
 
     expect(done.retried).toBe(false);
-    expect(done.exceededTarget).toBe(done.outputBytes > targetBytesFromMB(targetMB));
+    expect(done.qualityReduced).toBe(false);
+    expect(done).not.toHaveProperty("exceededTarget");
     expect(done.outputBytes).toBeLessThan(orig);
     expect(done.outputBytes).toBeGreaterThan(0);
     expect(messages.some((message) => message.includes("清晰度优先"))).toBe(true);
@@ -146,102 +145,203 @@ async function withFakeFfmpeg(
   }
 }
 
-const sizeScript = `#!/bin/sh
-echo run >> "__CALLS__"
+function sizedScript(kib: number[]): string {
+  const fallback = kib[kib.length - 1] ?? 1;
+  const cases = kib.map((count, index) => `  ${index + 1}) count=${count} ;;`).join("\n");
+  return `#!/bin/sh
+printf '%s\\n' "$@" >> "__CALLS__"
+echo '---' >> "__CALLS__"
+n=$(grep -c '^---$' "__CALLS__")
+count=${fallback}
+case "$n" in
+${cases}
+esac
 for last do :; done
-dd if=/dev/zero of="$last" bs=1048576 count=__COUNT__ 2>/dev/null
+dd if=/dev/zero of="$last" bs=1024 count="$count" 2>/dev/null
 base=\${last%.partial}
 touch "$base.x265pass-0.log" "$base.x265pass-0.log.mbtree" "$base.x265pass-0.log.cutree" "$base.x265pass.log" "$base.x265pass.log.mbtree" "$base.x265pass.log.cutree"
 `;
+}
 
-it("saves one quality pass when the result exceeds the reference target but is smaller than the source", async () => {
-  await withFakeFfmpeg(sizeScript.replace("__COUNT__", "2"), async (dir, executable, calls) => {
+function invocations(log: string): string[][] {
+  return log.split(/^---$/m)
+    .map((block) => block.split("\n").map((line) => line.trim()).filter(Boolean))
+    .filter((args) => args.length > 0);
+}
+
+function bitrateOf(args: string[]): number | null {
+  const index = args.indexOf("-b:v");
+  return index >= 0 ? Number(args[index + 1]) : null;
+}
+
+const sourceBytes = 5 * 1024 * 1024;
+
+async function runSized(
+  kib: number[],
+  targetMB: number | null,
+  hooks: {
+    onDone?: (event: DoneEvent) => void;
+    onFail?: (message: string) => void;
+    onProgress?: (message: string) => void;
+    check?: (dir: string) => Promise<void>;
+  },
+): Promise<string[][]> {
+  let calls: string[][] = [];
+  await withFakeFfmpeg(sizedScript(kib), async (dir, executable, callLog) => {
     const input = join(dir, "input.mp4");
     await writeFile(input, "original-bytes");
-    const sourceBytes = 5 * 1024 * 1024;
     const caps: EncoderCaps = {
       x265: false, videotoolbox: true, ffmpegVersion: "test", probedAt: "", ffmpegPath: executable,
     };
-    const messages: string[] = [];
     const job = new CompressJob();
-    const done = await new Promise<{ outputPath: string; outputBytes: number; retried: boolean; exceededTarget: boolean; encoder: string }>((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       void job.run({
         ffmpegPath: executable,
         probe: probeFor(input, sourceBytes),
-        targetMB: 1,
+        targetMB,
         caps,
         hooks: {
           exists: existsSync,
-          onProgress: (event) => messages.push(event.message),
-          onDone: (event) => resolve({
-            outputPath: event.outputPath,
-            outputBytes: event.outputBytes,
-            retried: event.retried,
-            exceededTarget: event.exceededTarget,
-            encoder: event.encoder,
-          }),
-          onFail: (event) => reject(new Error(event.message)),
+          onProgress: (event) => hooks.onProgress?.(event.message),
+          onDone: (event) => {
+            hooks.onDone?.(event);
+            resolve();
+          },
+          onFail: (event) => {
+            hooks.onFail?.(event.message);
+            resolve();
+          },
         },
-      });
+      }).catch(reject);
     });
-
-    const output = join(dir, "input_720p.mp4");
-    expect(done.outputPath).toBe(output);
-    expect(done.outputBytes).toBe(2 * 1024 * 1024);
-    expect(done.exceededTarget).toBe(true);
-    expect(done.retried).toBe(false);
-    expect(done.encoder).toBe("videotoolbox");
-    expect((await readFile(calls, "utf8")).trim().split("\n")).toHaveLength(1);
-    expect(messages).toContain("正在按清晰度优先编码为 1280×720 HEVC");
-    expect(messages.some((message) => message.includes("再压") || message.includes("第一遍") || message.includes("第二遍") || message.includes("按目标体积"))).toBe(false);
+    calls = invocations(await readFile(callLog, "utf8"));
     expect(await readFile(input, "utf8")).toBe("original-bytes");
-    expect((await stat(output)).size).toBe(2 * 1024 * 1024);
-    for (const name of [
-      `${output}.partial`,
-      `${output}.x265pass-0.log`,
-      `${output}.x265pass-0.log.mbtree`,
-      `${output}.x265pass-0.log.cutree`,
-      `${output}.x265pass.log`,
-      `${output}.x265pass.log.mbtree`,
-      `${output}.x265pass.log.cutree`,
-    ]) {
-      expect(existsSync(name)).toBe(false);
-    }
+    await hooks.check?.(dir);
   });
+  return calls;
+}
+
+it("runs only one quality pass when the limit is empty", async () => {
+  const messages: string[] = [];
+  let done: DoneEvent | null = null;
+  const calls = await runSized([2048], null, {
+    onProgress: (message) => messages.push(message),
+    onDone: (event) => { done = event; },
+    onFail: (message) => { throw new Error(message); },
+    check: async (dir) => {
+      const output = join(dir, "input_720p.mp4");
+      expect(done?.outputPath).toBe(output);
+      expect((await stat(output)).size).toBe(2 * 1024 * 1024);
+      expect(existsSync(`${output}.partial`)).toBe(false);
+      expect(existsSync(`${output}.x265pass.log.cutree`)).toBe(false);
+    },
+  });
+  expect(done).toMatchObject({
+    outputBytes: 2 * 1024 * 1024,
+    qualityReduced: false,
+    retried: false,
+    encoder: "videotoolbox",
+  });
+  expect(done).not.toHaveProperty("exceededTarget");
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toContain("-q:v");
+  expect(calls[0]).toContain("70");
+  expect(calls[0]).not.toContain("-b:v");
+  expect(messages).toContain("正在按清晰度优先编码为 1280×720 HEVC");
+  expect(messages.some((message) => message.includes("按目标上限") || message.includes("第一遍") || message.includes("第二遍"))).toBe(false);
 });
 
-it("does not save a result that is not smaller than the source", async () => {
-  await withFakeFfmpeg(sizeScript.replace("__COUNT__", "5"), async (dir, executable, calls) => {
-    const input = join(dir, "input.mp4");
-    await writeFile(input, "original-bytes");
-    const caps: EncoderCaps = {
-      x265: false, videotoolbox: true, ffmpegVersion: "test", probedAt: "", ffmpegPath: executable,
-    };
-    const job = new CompressJob();
-    const failure = await new Promise<string>((resolve, reject) => {
-      void job.run({
-        ffmpegPath: executable,
-        probe: probeFor(input, 5 * 1024 * 1024),
-        targetMB: 1,
-        caps,
-        hooks: {
-          exists: existsSync,
-          onProgress: () => undefined,
-          onDone: () => reject(new Error("result that is not smaller was saved")),
-          onFail: (event) => resolve(event.message),
-        },
-      });
-    });
-    const output = join(dir, "input_720p.mp4");
-    expect(failure).toBe("压缩后体积未小于原片，未保存结果；原片没有改动。");
-    expect(failure).not.toContain("未能压到目标体积");
-    expect((await readFile(calls, "utf8")).trim().split("\n")).toHaveLength(1);
-    expect(existsSync(output)).toBe(false);
-    expect(existsSync(`${output}.partial`)).toBe(false);
-    expect(existsSync(`${output}.x265pass-0.log.cutree`)).toBe(false);
-    expect(existsSync(`${output}.x265pass.log.cutree`)).toBe(false);
-    expect(await readFile(input, "utf8")).toBe("original-bytes");
+it("keeps the smaller quality pass when it is already within the limit", async () => {
+  let done: DoneEvent | null = null;
+  const calls = await runSized([1024], 3, {
+    onDone: (event) => { done = event; },
+    onFail: (message) => { throw new Error(message); },
   });
+  expect(done).toMatchObject({ outputBytes: 1024 * 1024, qualityReduced: false, retried: false });
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toContain("-q:v");
+  expect(calls[0]).not.toContain("-b:v");
+});
+
+it("uses one bitrate pass when quality exceeds the limit and that pass fits", async () => {
+  const messages: string[] = [];
+  let done: DoneEvent | null = null;
+  const calls = await runSized([3072, 1024], 1, {
+    onProgress: (message) => messages.push(message),
+    onDone: (event) => { done = event; },
+    onFail: (message) => { throw new Error(message); },
+  });
+  expect(done).toMatchObject({ outputBytes: 1024 * 1024, qualityReduced: true, retried: false });
+  expect(calls).toHaveLength(2);
+  expect(calls[0]).toContain("-q:v");
+  expect(calls[0]).not.toContain("-b:v");
+  expect(calls[1]).toContain("-b:v");
+  expect(calls[1]).toContain("-maxrate");
+  expect(calls[1]).not.toContain("-q:v");
+  expect(messages.some((message) => message.includes("正在按目标上限编码"))).toBe(true);
+  expect(messages.filter((message) => message.includes("清晰度优先"))).toHaveLength(1);
+});
+
+it("retries the bitrate once and saves when that pass fits", async () => {
+  let done: DoneEvent | null = null;
+  const calls = await runSized([4096, 3072, 1024], 1, {
+    onDone: (event) => { done = event; },
+    onFail: (message) => { throw new Error(message); },
+  });
+  expect(done).toMatchObject({ outputBytes: 1024 * 1024, qualityReduced: true, retried: true });
+  expect(calls).toHaveLength(3);
+  const first = bitrateOf(calls[1] ?? []);
+  const second = bitrateOf(calls[2] ?? []);
+  expect(first).not.toBeNull();
+  expect(second).not.toBeNull();
+  expect(second ?? 0).toBeLessThan(first ?? 0);
+  expect(calls.filter((args) => args.includes("-q:v"))).toHaveLength(1);
+});
+
+it("does not save when two constrained passes stay above the limit", async () => {
+  let failure = "";
+  const calls = await runSized([2048, 2048, 2048], 1, {
+    onDone: () => { throw new Error("over-limit result was saved"); },
+    onFail: (message) => { failure = message; },
+    check: async (dir) => {
+      expect(existsSync(join(dir, "input_720p.mp4"))).toBe(false);
+      expect(existsSync(join(dir, "input_720p.mp4.partial"))).toBe(false);
+    },
+  });
+  expect(failure).toBe(MSG.overLimit);
+  expect(failure).not.toContain("未小于原片");
+  expect(calls).toHaveLength(3);
+});
+
+it("does not save a quality result that is not smaller than the source", async () => {
+  let failure = "";
+  const calls = await runSized([5120], null, {
+    onDone: () => { throw new Error("result that is not smaller was saved"); },
+    onFail: (message) => { failure = message; },
+    check: async (dir) => {
+      expect(existsSync(join(dir, "input_720p.mp4"))).toBe(false);
+      expect(existsSync(join(dir, "input_720p.mp4.partial"))).toBe(false);
+      expect(existsSync(join(dir, "input_720p.mp4.x265pass.log.cutree"))).toBe(false);
+    },
+  });
+  expect(failure).toBe(MSG.sizeNotSmaller);
+  expect(failure).not.toContain("未能压到目标体积");
+  expect(calls).toHaveLength(1);
+});
+
+it("does not save a constrained result that is not smaller than the source", async () => {
+  let failure = "";
+  const calls = await runSized([3072, 5120], 1, {
+    onDone: () => { throw new Error("result that is not smaller was saved"); },
+    onFail: (message) => { failure = message; },
+    check: async (dir) => {
+      expect(existsSync(join(dir, "input_720p.mp4"))).toBe(false);
+    },
+  });
+  expect(failure).toBe(MSG.sizeNotSmaller);
+  expect(failure).not.toContain("未能压到目标体积");
+  expect(calls).toHaveLength(2);
+  expect(calls[1]).toContain("-b:v");
 });
 
 it("falls back from a failed VideoToolbox pass to one libx265 quality pass", async () => {
@@ -262,23 +362,23 @@ dd if=/dev/zero of="$last" bs=1024 count=100 2>/dev/null
       x265: true, videotoolbox: true, ffmpegVersion: "test", probedAt: "", ffmpegPath: executable,
     };
     const job = new CompressJob();
-    const done = await new Promise<{ encoder: string; retried: boolean; exceededTarget: boolean }>((resolve, reject) => {
+    const done = await new Promise<{ encoder: string; retried: boolean; qualityReduced: boolean }>((resolve, reject) => {
       void job.run({
         ffmpegPath: executable,
         probe: probeFor(input, 5 * 1024 * 1024),
-        targetMB: 1,
+        targetMB: null,
         caps,
         hooks: {
           exists: existsSync,
           onProgress: () => undefined,
-          onDone: (event) => resolve({ encoder: event.encoder, retried: event.retried, exceededTarget: event.exceededTarget }),
+          onDone: (event) => resolve({ encoder: event.encoder, retried: event.retried, qualityReduced: event.qualityReduced }),
           onFail: (event) => reject(new Error(event.message)),
         },
       });
     });
     expect(done.encoder).toBe("x265");
     expect(done.retried).toBe(false);
-    expect(done.exceededTarget).toBe(false);
+    expect(done.qualityReduced).toBe(false);
     expect((await readFile(calls, "utf8")).trim().split("\n")).toEqual(["vt", "x265"]);
     expect((await stat(join(dir, "input_720p.mp4"))).size).toBe(100 * 1024);
     expect(await readFile(input, "utf8")).toBe("original-bytes");

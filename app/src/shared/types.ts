@@ -28,7 +28,8 @@ export interface ProbeInfo {
 
 export interface StartInput {
   filePath: string;
-  targetMB: number;
+  /** null 表示没填，只走清晰度优先；正整数表示必须压进的上限。 */
+  targetMB: number | null;
 }
 
 export type QualityMetric = "vmaf" | "ssim";
@@ -45,12 +46,12 @@ export interface QualityCandidate {
 export interface QualityAnalysis {
   filePath: string;
   encoder: EncoderKind;
-  metric: QualityMetric;
+  /** 样片按清晰度优先外推后，四舍五入到至少 1 的整数 MB。 */
+  estimatedMB: number;
   sampleCount: number;
   sampleDurationSec: number;
-  candidates: QualityCandidate[];
-  recommendedTargetMB: number;
-  meetsHeuristic: boolean;
+  /** 试压时已经填了上限，则说明估计是否不超过该上限；没填为 null。 */
+  withinLimit: boolean | null;
 }
 
 export interface AnalysisProgress {
@@ -83,7 +84,8 @@ export interface DoneEvent {
   savedBytes: number;
   encoder: EncoderKind;
   retried: boolean;
-  exceededTarget: boolean;
+  /** 为了压进上限而改走码率约束时为 true。没填，或清晰度优先已经进上限时为 false。 */
+  qualityReduced: boolean;
   elapsedSec: number;
 }
 

@@ -64,8 +64,9 @@ export function isTargetTooLarge(targetMB: number, sizeBytes: number): boolean {
   return targetMB * 1024 * 1024 >= sizeBytes;
 }
 
-export function requiredDiskBytes(targetMB: number, sizeBytes?: number): number {
-  const target = targetBytesFromMB(targetMB);
+/** 没填时 targetMB 为 null，按原片体积预留；填了上限时取上限和原片中较大的一边。 */
+export function requiredDiskBytes(targetMB: number | null, sizeBytes?: number): number {
+  const target = targetMB == null ? 0 : targetBytesFromMB(targetMB);
   const basis = sizeBytes != null ? Math.max(target, sizeBytes) : target;
   return basis + Math.max(200 * 1024 * 1024, Math.floor(basis * 0.2));
 }

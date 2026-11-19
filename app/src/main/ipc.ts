@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import type { QueueStartItem, QueueStartRequest } from "../shared/queue";
 import type { EncoderCaps, ProbeInfo, QualityAnalysis, StartInput } from "../shared/types";
 import type { BatchQueue } from "./queue/runner";
-import { candidateTargets } from "../shared/quality";
+import { isTargetTooLarge } from "../shared/bitrate";
 import { APP_NAME, FEEDBACK_EMAIL, MAINTAINER, MSG } from "../shared/messages";
 import { LicenseSession } from "./license/session";
 import { probeFile, isLikelyVideoPath } from "./ffmpeg/probe";
@@ -47,8 +47,18 @@ async function currentProbe(filePath: string): Promise<ProbeInfo> {
   return probe;
 }
 
-function validTarget(probe: ProbeInfo, targetMB: number): boolean {
-  return candidateTargets(targetMB, probe.sizeBytes).length > 0;
+function limitOrNull(value: unknown): number | null | undefined {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  const mb = Math.round(parsed);
+  if (mb < 1) return undefined;
+  return mb;
+}
+
+function acceptableLimit(probe: ProbeInfo, targetMB: number | null): boolean {
+  if (targetMB == null) return true;
+  return !isTargetTooLarge(targetMB, probe.sizeBytes);
 }
 
 function readQueueItems(input: QueueStartRequest | undefined): QueueStartItem[] {
@@ -56,8 +66,8 @@ function readQueueItems(input: QueueStartRequest | undefined): QueueStartItem[] 
   const items: QueueStartItem[] = [];
   for (const raw of input.items) {
     if (!raw || typeof raw.id !== "string" || !raw.id || typeof raw.filePath !== "string" || !raw.filePath) continue;
-    const targetMB = Number(raw.targetMB);
-    if (!Number.isFinite(targetMB)) continue;
+    const targetMB = limitOrNull(raw.targetMB);
+    if (targetMB === undefined) continue;
     items.push({
       id: raw.id,
       filePath: raw.filePath,
@@ -105,21 +115,25 @@ export function registerIpc(ctx: MainContext): void {
   ipcMain.handle("check-start-guards", async (_e, input: StartInput) => {
     const probe = probes.get(input.filePath);
     if (!probe) return { ok: false, reason: "unsupported", message: MSG.unsupported };
-    if (!validTarget(probe, input.targetMB)) return { ok: false, reason: "target_too_large", message: "请输入小于原片大小的有效目标。" };
-    return checkGuards(probe, input.targetMB);
+    const targetMB = limitOrNull(input?.targetMB);
+    if (targetMB === undefined || !acceptableLimit(probe, targetMB)) {
+      return { ok: false, reason: "target_too_large", message: "请输入小于原片大小的有效目标。" };
+    }
+    return checkGuards(probe, targetMB);
   });
 
   ipcMain.handle("start-compress", async (_e, input: StartInput) => {
     if (ctx.queue.isBusy()) throw new Error("正在处理其他任务，请稍候。");
     const probe = await currentProbe(input.filePath);
-    if (!validTarget(probe, input.targetMB)) throw new Error("请输入小于原片大小的有效目标。");
+    const targetMB = limitOrNull(input?.targetMB);
+    if (targetMB === undefined || !acceptableLimit(probe, targetMB)) throw new Error("请输入小于原片大小的有效目标。");
     const decision = await ctx.session.decideStart();
     if (decision.action !== "start") {
       throw Object.assign(new Error(decision.action === "block" ? decision.message : "请稍候…"), {
         license: decision,
       });
     }
-    const guard = await checkGuards(probe, input.targetMB);
+    const guard = await checkGuards(probe, targetMB);
     if (!guard.ok) {
       throw Object.assign(new Error(guard.message), { guard });
     }
@@ -127,14 +141,13 @@ export function registerIpc(ctx: MainContext): void {
     const caps = await ctx.getCaps();
     if (ctx.queue.isBusy() || ctx.job.isRunning || ctx.analyzer.isRunning || pendingAnalysis) throw new Error("正在处理其他任务，请稍候。");
     const previous = analyses.get(input.filePath);
-    const preferredEncoder = previous?.candidates.some((candidate) => candidate.targetMB === input.targetMB)
-      ? previous.encoder : undefined;
+    const preferredEncoder = previous?.encoder;
     const win = ctx.getWindow();
     ctx.preview.revoke();
     void ctx.job.run({
       ffmpegPath: bins.ffmpeg,
       probe,
-      targetMB: input.targetMB,
+      targetMB,
       caps,
       preferredEncoder,
       hooks: {
@@ -182,7 +195,8 @@ export function registerIpc(ctx: MainContext): void {
     const win = ctx.getWindow();
     try {
       const probe = await currentProbe(input.filePath);
-      if (!validTarget(probe, input.targetMB)) throw new Error("请输入小于原片大小的有效目标。");
+      const targetMB = limitOrNull(input?.targetMB);
+      if (targetMB === undefined) throw new Error("请输入小于原片大小的有效目标。");
       const decision = await ctx.session.decideStart();
       if (decision.action !== "start") {
         throw new Error(decision.action === "block" ? decision.message : "正在校验 Key，请稍候。");
@@ -192,7 +206,7 @@ export function registerIpc(ctx: MainContext): void {
       if (pending.cancelled || !win || win.isDestroyed()) throw new Error("已取消画质分析。");
       if (ctx.queue.isBusy() || ctx.job.isRunning || ctx.analyzer.isRunning) throw new Error("正在处理其他任务，请稍候。");
       const result = await ctx.analyzer.run({
-        ffmpeg: bins.ffmpeg, ffprobe: bins.ffprobe, probe, targetMB: input.targetMB, caps,
+        ffmpeg: bins.ffmpeg, ffprobe: bins.ffprobe, probe, targetMB, caps,
         onProgress: (event) => { if (!win.isDestroyed()) win.webContents.send("analysis-progress", event); },
       });
       if (pending.cancelled) throw new Error("已取消画质分析。");
