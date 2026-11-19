@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; media-src 'self' kuaiyaya-media:;" />
   <title>快鸭鸭</title>
   <link rel="stylesheet" href="./styles/tokens.css" />
   <link rel="stylesheet" href="./styles/app.css" />
@@ -179,10 +179,19 @@
 
       <section class="screen" id="screen-done">
         <div class="wash faint" aria-hidden="true"></div>
-        <div class="result-icon ok">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.3 16.3L5.7 12.7l-1.4 1.4 5 5 11-11-1.4-1.4z"/></svg>
+        <div class="done-preview" id="donePreviewBox">
+          <video id="donePreview" class="is-hidden" controls preload="auto" playsinline disablepictureinpicture aria-label="压缩完成的视频预览"></video>
+          <div class="done-preview-status hidden" id="donePreviewStatus" aria-live="polite">
+            <p id="donePreviewMsg"></p>
+            <button class="hidden" id="donePreviewRetry" type="button">再试一次</button>
+          </div>
         </div>
-        <div class="result-title">压缩完成</div>
+        <div class="done-heading">
+          <span class="done-check" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.3 16.3L5.7 12.7l-1.4 1.4 5 5 11-11-1.4-1.4z"/></svg>
+          </span>
+          <div class="result-title">压缩完成</div>
+        </div>
         <div class="result-sub" id="doneSub">输出文件已保存在原片同一目录</div>
         <div class="stat">
           <div><div class="k">原片</div><div class="v" id="statBefore">—</div></div>

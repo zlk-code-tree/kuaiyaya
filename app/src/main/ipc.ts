@@ -14,6 +14,7 @@ import { UpdateChecker } from "./update/checker";
 import { checkGuards } from "./fs/guard";
 import { selectVideo } from "./fs/dialog";
 import { openFile, revealInFinder } from "./fs/open";
+import type { OutputPreviewGate } from "./media-protocol";
 import { qrPath, type AppConfig } from "./paths";
 
 export interface MainContext {
@@ -26,6 +27,7 @@ export interface MainContext {
   getCaps: () => Promise<EncoderCaps>;
   getFfmpeg: () => Promise<{ ffmpeg: string; ffprobe: string }>;
   queue: BatchQueue;
+  preview: OutputPreviewGate;
 }
 
 const probes = new Map<string, ProbeInfo>();
@@ -128,6 +130,7 @@ export function registerIpc(ctx: MainContext): void {
     const preferredEncoder = previous?.candidates.some((candidate) => candidate.targetMB === input.targetMB)
       ? previous.encoder : undefined;
     const win = ctx.getWindow();
+    ctx.preview.revoke();
     void ctx.job.run({
       ffmpegPath: bins.ffmpeg,
       probe,
@@ -137,7 +140,10 @@ export function registerIpc(ctx: MainContext): void {
       hooks: {
         exists: (p) => existsSync(p),
         onProgress: (ev) => win?.webContents.send("compress-progress", ev),
-        onDone: (ev) => win?.webContents.send("compress-done", ev),
+        onDone: (ev) => {
+          ctx.preview.noteSuccess(ev.outputPath);
+          win?.webContents.send("compress-done", ev);
+        },
         onFail: (ev) => win?.webContents.send("compress-fail", ev),
       },
     });
@@ -151,6 +157,7 @@ export function registerIpc(ctx: MainContext): void {
     if (ctx.queue.isBusy() || ctx.job.isRunning || ctx.analyzer.isRunning || pendingAnalysis) return busy();
     const items = readQueueItems(input);
     if (items.length === 0) return { ok: false, message: "没有可以压缩的视频。" };
+    ctx.preview.revoke();
     return ctx.queue.start(items);
   });
 
@@ -163,6 +170,7 @@ export function registerIpc(ctx: MainContext): void {
   });
 
   ipcMain.handle("queue-retry", async (_e, input: { id?: string; allFailed?: boolean }) => {
+    ctx.preview.revoke();
     if (input?.allFailed) ctx.queue.retryFailed();
     else if (typeof input?.id === "string") ctx.queue.retryItem(input.id);
   });
@@ -200,6 +208,15 @@ export function registerIpc(ctx: MainContext): void {
   ipcMain.handle("cancel-analysis", async () => {
     if (pendingAnalysis) pendingAnalysis.cancelled = true;
     await ctx.analyzer.cancel();
+  });
+
+  ipcMain.handle("acquire-output-preview", async (_e, filePath: unknown) => {
+    if (typeof filePath !== "string") return null;
+    return ctx.preview.acquire(filePath);
+  });
+
+  ipcMain.handle("release-output-preview", async () => {
+    ctx.preview.revoke();
   });
 
   ipcMain.handle("open-file", async (_e, filePath: string) => {

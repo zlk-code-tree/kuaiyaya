@@ -11,11 +11,13 @@ import { UpdateChecker } from "./update/checker";
 import { KeychainStore, MemorySecretStore, WindowsSecretStore } from "./license/store";
 import { LicenseSession } from "./license/session";
 import { registerIpc } from "./ipc";
+import { installMediaHandler, OutputPreviewGate, registerMediaScheme } from "./media-protocol";
 import { loadConfig, type AppConfig } from "./paths";
 import { prepareQueueItem } from "./queue/prepare";
 import { BatchQueue } from "./queue/runner";
 
 app.setName(APP_NAME);
+registerMediaScheme();
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -24,6 +26,7 @@ if (!gotLock) {
 
 let mainWindow: BrowserWindow | null = null;
 let config: AppConfig;
+const preview = new OutputPreviewGate();
 const job = new CompressJob();
 const analyzer = new QualityAnalyzer();
 let queue: BatchQueue | null = null;
@@ -151,6 +154,7 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(async () => {
+  installMediaHandler(preview);
   config = await loadConfig();
   session = new LicenseSession(secrets, () => ({ baseUrl: config.apiBaseUrl }), app.getVersion());
   const updates = new UpdateChecker(() => config.apiBaseUrl, app.getVersion(), process.platform, process.arch, (url) => shell.openExternal(url));
@@ -191,6 +195,7 @@ app.whenReady().then(async () => {
     getCaps,
     getFfmpeg: getBins,
     queue,
+    preview,
   });
   createWindow();
   void session.boot();
