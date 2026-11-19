@@ -4,8 +4,8 @@ import type { GuardResult, ProbeInfo } from "../../shared/types";
 import { isTargetTooLarge, requiredDiskBytes } from "../../shared/bitrate";
 import { MSG } from "../../shared/messages";
 
-export async function checkGuards(probe: ProbeInfo, targetMB: number): Promise<GuardResult> {
-  if (isTargetTooLarge(targetMB, probe.sizeBytes)) {
+export async function checkGuards(probe: ProbeInfo, targetMB: number | null): Promise<GuardResult> {
+  if (targetMB != null && isTargetTooLarge(targetMB, probe.sizeBytes)) {
     return { ok: false, reason: "target_too_large", message: MSG.targetTooLarge };
   }
   const dir = dirname(probe.path);

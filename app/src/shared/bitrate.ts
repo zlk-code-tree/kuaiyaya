@@ -43,6 +43,7 @@ export function exceedsTarget(outputBytes: number, targetBytes: number): boolean
   return outputBytes > targetBytes;
 }
 
+/** 旧的「原片一半」取整。不再作为开压目标，空输入不会调用它。 */
 export function defaultTargetMB(sizeBytes: number): number {
   return Math.max(1, Math.round(sizeBytes / (1024 * 1024) / 2));
 }
@@ -56,7 +57,7 @@ export function sliderBounds(sizeBytes: number): { min: number; max: number } {
 
 export function clampTargetMB(value: number, sizeBytes: number): number {
   const { min, max } = sliderBounds(sizeBytes);
-  if (!Number.isFinite(value)) return defaultTargetMB(sizeBytes);
+  if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
@@ -64,8 +65,9 @@ export function isTargetTooLarge(targetMB: number, sizeBytes: number): boolean {
   return targetMB * 1024 * 1024 >= sizeBytes;
 }
 
-export function requiredDiskBytes(targetMB: number, sizeBytes?: number): number {
-  const target = targetBytesFromMB(targetMB);
+/** 没填（targetMB 为 null）按原片体积预留；填了上限按 max(上限, 原片) 预留。 */
+export function requiredDiskBytes(targetMB: number | null, sizeBytes?: number): number {
+  const target = targetMB == null ? 0 : targetBytesFromMB(targetMB);
   const basis = sizeBytes != null ? Math.max(target, sizeBytes) : target;
   return basis + Math.max(200 * 1024 * 1024, Math.floor(basis * 0.2));
 }

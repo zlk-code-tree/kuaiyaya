@@ -8,7 +8,11 @@ import { doneSubtitle } from "./done-sub";
 import { $, formatDuration, formatElapsed, formatMB, formatRemainDetail, toast } from "./dom";
 import { createQueueController, type QueueController } from "./queue-ui";
 import { showScreen } from "./state/machine";
-import { applyInput, fromFileSize, tooLarge, type TargetState } from "./state/target-size";
+import { applySlider, applyTyped, fromFileSize, tooLarge, type TargetState } from "./state/target-size";
+
+const HINT_EMPTY = "没填时，按清晰度估算这支视频在保证画质下能压到多小，再按这个结果压。1080p 及以下不缩小，更高分辨率长边不超过 1920。";
+const HINT_CAP = "这个数字是上限。尽量压到这个体积，并在限制里把清晰度做到最好；能压得更小就保留更小的，不会往大了凑。必须小于原片。";
+const HINT_INVALID = "请输入 1 以上的整数 MB，或清空后按清晰度自动压。";
 
 const api = window.kuaiyaya;
 
@@ -113,7 +117,7 @@ function applyLicense(s: LicenseState): void {
 
 function syncStartButton(): void {
   const btn = $("startBtn") as HTMLButtonElement;
-  const blocked = target ? tooLarge(target) : false;
+  const blocked = target ? tooLarge(target) || target.invalid : false;
   if (license?.pendingStart || (license?.silentChecking && license.pendingStart)) {
     btn.disabled = true;
     btn.classList.add("waiting");
@@ -131,15 +135,28 @@ function setKeyMsg(kind: "ok" | "err" | "", text: string): void {
   el.textContent = text;
 }
 
-function renderTarget(): void {
+function renderTarget(opts?: { keepInput?: boolean }): void {
   if (!probe || !target) return;
   const slider = $("sizeSlider") as HTMLInputElement;
   const input = $("sizeInput") as HTMLInputElement;
   slider.min = String(target.min);
-  slider.max = String(target.max);
-  slider.value = String(target.targetMB);
-  input.value = String(target.targetMB);
-  $("targetHint").textContent = `目标 ${target.targetMB} MB 仅作参考。将按清晰度优先编码，1080p 及以下不缩小，更高分辨率长边不超过 1920。超出目标也会保留结果。`;
+  slider.max = String(Math.max(target.min, target.max));
+  const thumb = target.targetMB == null ? target.min : Math.min(Math.max(target.min, target.targetMB), Math.max(target.min, target.max));
+  slider.value = String(thumb);
+  slider.disabled = target.targetMB == null || target.invalid;
+  if (!opts?.keepInput) input.value = target.targetMB == null ? "" : String(target.targetMB);
+  const hint = $("targetHint");
+  hint.classList.toggle("warn", target.invalid);
+  if (target.invalid) {
+    hint.textContent = HINT_INVALID;
+    $("targetCaption").textContent = "请输入有效上限";
+  } else if (target.targetMB == null) {
+    hint.textContent = HINT_EMPTY;
+    $("targetCaption").textContent = "没填则按清晰度自动压";
+  } else {
+    hint.textContent = HINT_CAP;
+    $("targetCaption").textContent = "这个数字是上限";
+  }
   renderAnalysisSummary();
   const banner = $("targetBanner");
   const blocked = tooLarge(target);
@@ -161,10 +178,7 @@ function renderAnalysisSummary(): void {
     return;
   }
   summary.classList.remove("hidden");
-  const matched = qualityAnalysis.candidates.some((item) => item.targetMB === target?.targetMB);
-  summary.append(document.createTextNode(matched
-    ? `已完成本机抽样分析，建议目标 ${qualityAnalysis.recommendedTargetMB} MB。`
-    : "目标已变化，如需对应建议请重新分析。"));
+  summary.append(document.createTextNode(analysisHeadline(qualityAnalysis)));
   const review = document.createElement("button");
   review.className = "linkish";
   review.type = "button";
@@ -175,28 +189,31 @@ function renderAnalysisSummary(): void {
   summary.append(review);
 }
 
+function roundedEstimate(estimatedMB: number): number {
+  if (!Number.isFinite(estimatedMB)) return 1;
+  return Math.max(1, Math.round(estimatedMB));
+}
+
+function analysisHeadline(result: QualityAnalysis): string {
+  const approx = `按清晰度大约能压到 ${formatMB(result.estimatedMB * 1024 * 1024)}`;
+  if (!target || target.invalid || target.targetMB == null) return `${approx}。`;
+  return roundedEstimate(result.estimatedMB) <= target.targetMB
+    ? `${approx}，已经不超过当前上限 ${target.targetMB} MB。`
+    : `${approx}，高于当前上限 ${target.targetMB} MB。`;
+}
+
 function showAnalysisResult(result: QualityAnalysis): void {
   $("analysisTitle").textContent = "抽样分析结果";
-  $("analysisStatus").textContent = result.meetsHeuristic
-    ? `建议先尝试 ${result.recommendedTargetMB} MB：样片达到参考阈值。`
-    : `建议先尝试 ${result.recommendedTargetMB} MB；样片仍有画质损失风险，可调大目标再分析。`;
+  $("analysisStatus").textContent = analysisHeadline(result);
   $("analysisProgress").classList.add("hidden");
   const results = $("analysisResults");
   results.replaceChildren();
-  for (const candidate of result.candidates) {
-    const row = document.createElement("div");
-    row.className = "analysis-result";
-    const title = document.createElement("strong");
-    title.textContent = `目标 ${candidate.targetMB} MB${candidate.targetMB === result.recommendedTargetMB ? " · 建议" : ""}`;
-    const detail = document.createElement("span");
-    const score = result.metric === "vmaf" ? candidate.lowestScore.toFixed(1) : candidate.lowestScore.toFixed(4);
-    detail.textContent = `最低片段平均 ${result.metric.toUpperCase()}：${score}；按样片估算全片约 ${formatMB(candidate.estimatedMB * 1024 * 1024)}${candidate.lowBitrateBudget ? "；目标可能过小，码率预算不足" : ""}`;
-    row.append(title, detail);
-    results.append(row);
-  }
-  results.classList.remove("hidden");
-  $("analysisNote").textContent = `抽取 ${result.sampleCount} 段，共约 ${Math.round(result.sampleDurationSec)} 秒；体积为样片外推，偏差可能较大。评分只供参考，不能保证全片画质，请检查小字、字幕及动态画面。输出分辨率按页面所示限制。`;
+  results.classList.add("hidden");
+  const rounded = roundedEstimate(result.estimatedMB);
+  $("analysisNote").textContent = `抽取 ${result.sampleCount} 段，共约 ${Math.round(result.sampleDurationSec)} 秒。这是样片外推，可能有偏差，不能保证全片画质。点「用作上限」将把 ${rounded} MB 设为上限，并必须压进这个体积。`;
   $("analysisNote").classList.remove("hidden");
+  ($("analysisApply") as HTMLButtonElement).textContent = "用作上限";
+  ($("analysisClose") as HTMLButtonElement).textContent = "关闭";
   $("analysisCancel").classList.add("hidden");
   $("analysisClose").classList.remove("hidden");
   $("analysisApply").classList.remove("hidden");
@@ -215,10 +232,6 @@ function onAnalysisProgress(event: AnalysisProgress): void {
 
 async function onAnalyze(): Promise<void> {
   if (!probe || !target || working || analyzing || queue.isRunning() || $("analysisOverlay").classList.contains("show")) return;
-  if (tooLarge(target)) {
-    showAlert("无法分析", MSG.targetTooLarge);
-    return;
-  }
   analyzing = true;
   renderUpdateNotice();
   analysisCancelRequested = false;
@@ -239,7 +252,7 @@ async function onAnalyze(): Promise<void> {
   cancel.focus();
   syncStartButton();
   try {
-    const result = await api.analyzeQuality({ filePath: probe.path, targetMB: target.targetMB });
+    const result = await api.analyzeQuality({ filePath: probe.path, targetMB: target.invalid ? null : target.targetMB });
     if (analysisCancelRequested) return;
     qualityAnalysis = result;
     renderAnalysisSummary();
@@ -267,10 +280,10 @@ function fillFileCard(): void {
   $("workSub").textContent = sub;
 }
 
-function showReady(info: ProbeInfo): void {
+function showReady(info: ProbeInfo, carriedMB: number | null = null): void {
   probe = info;
   qualityAnalysis = null;
-  target = fromFileSize(info.sizeBytes);
+  target = fromFileSize(info.sizeBytes, carriedMB);
   fillFileCard();
   renderTarget();
   setScreen("screen-ready");
@@ -362,6 +375,10 @@ async function onActivate(): Promise<void> {
 
 async function onStart(): Promise<void> {
   if (!probe || !target || analyzing || queue.isRunning() || $("analysisOverlay").classList.contains("show")) return;
+  if (target.invalid) {
+    showAlert("无法开始压缩", HINT_INVALID);
+    return;
+  }
   if (tooLarge(target)) {
     showAlert("无法开始压缩", MSG.targetTooLarge);
     return;
@@ -676,10 +693,9 @@ function onDone(ev: DoneEvent): void {
   stopWorkTimer();
   working = false;
   lastOutput = ev.outputPath;
-  const usedAnalysis = Boolean(qualityAnalysis && target && qualityAnalysis.filePath === probe?.path
-    && qualityAnalysis.candidates.some((candidate) => candidate.targetMB === target?.targetMB));
+  const usedAnalysis = Boolean(qualityAnalysis && qualityAnalysis.filePath === probe?.path);
   $("doneSub").textContent = doneSubtitle({
-    exceededTarget: ev.exceededTarget,
+    qualityReduced: ev.qualityReduced,
     usedAnalysis,
     encoder: ev.encoder,
     analysisEncoder: usedAnalysis ? qualityAnalysis?.encoder ?? null : null,
@@ -743,7 +759,7 @@ function bind(): void {
     getScreen: () => screen,
     setScreen,
     currentProbe: () => probe,
-    openSingle: showReady,
+    openSingle: (info, carriedMB) => showReady(info, carriedMB ?? null),
     goIdle,
     hasLicense: () => license == null || license.hasStoredKey,
     license: () => license ? Promise.resolve(license) : api.license.getState(),
@@ -835,7 +851,7 @@ function bind(): void {
   });
   $("analysisApply").addEventListener("click", () => {
     if (target && qualityAnalysis) {
-      target = applyInput(target, qualityAnalysis.recommendedTargetMB);
+      target = applyTyped(target, String(roundedEstimate(qualityAnalysis.estimatedMB)));
       renderTarget();
     }
     $("analysisOverlay").classList.remove("show");
@@ -845,13 +861,18 @@ function bind(): void {
   const slider = $("sizeSlider") as HTMLInputElement;
   const input = $("sizeInput") as HTMLInputElement;
   slider.addEventListener("input", () => {
-    if (!target) return;
-    target = applyInput(target, Number(slider.value));
+    if (!target || slider.disabled) return;
+    target = applySlider(target, Number(slider.value));
     renderTarget();
+  });
+  input.addEventListener("input", () => {
+    if (!target) return;
+    target = applyTyped(target, input.value);
+    renderTarget({ keepInput: true });
   });
   input.addEventListener("change", () => {
     if (!target) return;
-    target = applyInput(target, Number(input.value));
+    target = applyTyped(target, input.value);
     renderTarget();
   });
 
