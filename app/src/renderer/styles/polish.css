@@ -90,6 +90,7 @@
 input[type="range"] { height: 5px; background: #eee9dc; }
 input[type="range"]::-webkit-slider-thumb { width: 18px; height: 18px; background: #f4c941; border: 3px solid #fff; box-shadow: 0 0 0 1px #dbb13d, 0 2px 5px rgba(75,54,3,.16); }
 input[type="range"]:disabled { opacity: 0.4; }
+input[type="range"].is-unset::-webkit-slider-thumb { opacity: 0; width: 0; height: 0; border: 0; box-shadow: none; pointer-events: none; }
 .mb-field { background: #f8f7f2; border: 1px solid #eeece4; border-radius: 9px; }
 .mb-field input { width: 78px; color: var(--text); font-size: 14px; }
 .hint { color: #8b887d; font-size: 11px; line-height: 1.5; }

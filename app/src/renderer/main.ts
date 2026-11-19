@@ -8,7 +8,7 @@ import { doneSubtitle } from "./done-sub";
 import { $, formatDuration, formatElapsed, formatMB, formatRemainDetail, toast } from "./dom";
 import { createQueueController, type QueueController } from "./queue-ui";
 import { showScreen } from "./state/machine";
-import { applySlider, applyTyped, fromFileSize, tooLarge, type TargetState } from "./state/target-size";
+import { applySlider, applyTyped, fromFileSize, sliderThumbMB, tooLarge, type TargetState } from "./state/target-size";
 
 const HINT_EMPTY = "没填时，按清晰度估算这支视频在保证画质下能压到多小，再按这个结果压。1080p 及以下不缩小，更高分辨率长边不超过 1920。";
 const HINT_CAP = "这个数字是上限。尽量压到这个体积，并在限制里把清晰度做到最好；能压得更小就保留更小的，不会往大了凑。必须小于原片。";
@@ -141,9 +141,16 @@ function renderTarget(opts?: { keepInput?: boolean }): void {
   const input = $("sizeInput") as HTMLInputElement;
   slider.min = String(target.min);
   slider.max = String(Math.max(target.min, target.max));
-  const thumb = target.targetMB == null ? target.min : Math.min(Math.max(target.min, target.targetMB), Math.max(target.min, target.max));
-  slider.value = String(thumb);
-  slider.disabled = target.targetMB == null || target.invalid;
+  const thumb = sliderThumbMB(target);
+  const unset = thumb == null;
+  slider.classList.toggle("is-unset", unset);
+  slider.disabled = unset;
+  if (unset) {
+    slider.setAttribute("aria-valuetext", "未填写");
+  } else {
+    slider.value = String(thumb);
+    slider.removeAttribute("aria-valuetext");
+  }
   if (!opts?.keepInput) input.value = target.targetMB == null ? "" : String(target.targetMB);
   const hint = $("targetHint");
   hint.classList.toggle("warn", target.invalid);
@@ -759,6 +766,7 @@ function bind(): void {
     getScreen: () => screen,
     setScreen,
     currentProbe: () => probe,
+    currentReadyCap: () => (target && !target.invalid ? target.targetMB : null),
     openSingle: (info, carriedMB) => showReady(info, carriedMB ?? null),
     goIdle,
     hasLicense: () => license == null || license.hasStoredKey,

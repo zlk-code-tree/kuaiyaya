@@ -80,7 +80,7 @@
         <div class="panel">
           <div class="target-heading"><div><div class="panel-label">压到多大</div><div class="panel-caption" id="targetCaption">没填则按清晰度自动压</div></div><span class="target-unit">MB</span></div>
           <div class="target-row">
-            <input type="range" id="sizeSlider" aria-label="上限大小，留空时停用" min="1" max="100" value="1" disabled />
+            <input type="range" id="sizeSlider" class="is-unset" aria-label="上限大小，留空时停用" aria-valuetext="未填写" min="1" max="100" disabled />
             <label class="mb-field"><input type="number" id="sizeInput" aria-label="压到多大，MB，留空则按清晰度自动压" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="没填则按清晰度自动压到尽量小" /><span>MB</span></label>
           </div>
           <div class="hint" id="targetHint">没填时，按清晰度估算这支视频在保证画质下能压到多小，再按这个结果压。1080p 及以下不缩小，更高分辨率长边不超过 1920。</div>

@@ -1,5 +1,5 @@
 import { MSG } from "../shared/messages";
-import { carriedCapMB, itemTargetMB, queueStartAllowed, queueSummaryLine, readSharedTarget, targetSkipsItem, type QueueItemSnapshot, type QueueSnapshot, type QueueStartItem } from "../shared/queue";
+import { carriedCapMB, itemTargetMB, queueStartAllowed, queueSummaryLine, queueTargetTextFromReady, readSharedTarget, targetSkipsItem, type QueueItemSnapshot, type QueueSnapshot, type QueueStartItem } from "../shared/queue";
 import type { AppScreen, LicenseState, ProbeInfo, ProgressEvent } from "../shared/types";
 import { isLikelyVideoPath } from "../shared/video-ext";
 import { doneSubtitle } from "./done-sub";
@@ -24,6 +24,8 @@ interface QueueDeps {
   getScreen: () => AppScreen;
   setScreen: (id: AppScreen) => void;
   currentProbe: () => ProbeInfo | null;
+  /** 准备页上已经填好的上限。空着或非法时为 null。 */
+  currentReadyCap: () => number | null;
   openSingle: (info: ProbeInfo, carriedMB?: number | null) => void;
   goIdle: () => void;
   hasLicense: () => boolean;
@@ -91,10 +93,14 @@ export function createQueueController(deps: QueueDeps): QueueController {
     deps.openSingle(info, carried);
   }
 
-  function clearTargetField(): void {
+  function setQueueTargetText(text: string): void {
     const input = targetField();
-    input.value = "";
+    input.value = text;
     input.disabled = false;
+  }
+
+  function clearTargetField(): void {
+    setQueueTargetText("");
   }
 
   function currentBase(mode: "add" | "replace"): Draft[] {
@@ -176,9 +182,12 @@ export function createQueueController(deps: QueueDeps): QueueController {
       return;
     }
     const entering = deps.getScreen() !== "screen-queue";
+    const fromReady = deps.getScreen() === "screen-ready";
     drafts = next;
     live = null;
-    if (entering) clearTargetField();
+    if (entering) {
+      setQueueTargetText(fromReady ? queueTargetTextFromReady(deps.currentReadyCap()) : "");
+    }
     deps.setScreen("screen-queue");
     render();
   }

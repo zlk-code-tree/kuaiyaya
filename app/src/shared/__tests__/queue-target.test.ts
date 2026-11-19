@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { carriedCapMB, itemTargetMB, queueStartAllowed, queueSummaryLine, readSharedTarget, targetSkipsItem } from "../queue";
+import { carriedCapMB, itemTargetMB, queueStartAllowed, queueSummaryLine, queueTargetTextFromReady, readSharedTarget, targetSkipsItem } from "../queue";
 
 describe("batch target input", () => {
   it("stays empty until a number is entered, and returns to empty when cleared", () => {
@@ -31,6 +31,10 @@ describe("batch target input", () => {
     expect(carriedCapMB({ kind: "shared", mb: 30 })).toBe(30);
     expect(carriedCapMB({ kind: "quality" })).toBeNull();
     expect(carriedCapMB({ kind: "invalid" })).toBeNull();
+    expect(queueTargetTextFromReady(30)).toBe("30");
+    expect(queueTargetTextFromReady(null)).toBe("");
+    expect(queueTargetTextFromReady(Number.NaN)).toBe("");
+    expect(readSharedTarget(queueTargetTextFromReady(null)).kind).toBe("quality");
   });
 
   it("summarizes success, failure, cancellation, and skips without a reference-target line", () => {

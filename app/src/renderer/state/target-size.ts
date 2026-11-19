@@ -15,7 +15,7 @@ function sliderEnds(sizeBytes: number): { min: number; max: number } {
   return { min: 1, max };
 }
 
-/** 准备页默认空着。carriedMB 只在队列里已经填了上限、又删回到一支时带回来。 */
+/** 准备页默认空着。carriedMB 是从队列删回到一支时带回的已填上限。 */
 export function fromFileSize(sizeBytes: number, carriedMB: number | null = null): TargetState {
   const { min, max } = sliderEnds(sizeBytes);
   const carried = carriedMB != null && Number.isFinite(carriedMB) ? Math.round(carriedMB) : null;
@@ -33,6 +33,13 @@ export function applyTyped(state: TargetState, raw: string): TargetState {
   if (read.kind === "quality") return { ...state, targetMB: null, invalid: false };
   if (read.kind === "invalid") return { ...state, targetMB: null, invalid: true };
   return { ...state, targetMB: read.mb, invalid: false };
+}
+
+/** 空着或非法时没有滑块位置。不要用最小值 1 冒充已填写。 */
+export function sliderThumbMB(state: TargetState): number | null {
+  if (state.invalid || state.targetMB == null) return null;
+  const max = Math.max(state.min, state.max);
+  return Math.min(max, Math.max(state.min, state.targetMB));
 }
 
 /** 只有用户拖动滑条时才写入数字，空态不会自己填。 */

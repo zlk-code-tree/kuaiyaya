@@ -50,6 +50,7 @@ describe("done page subtitle", () => {
       analysisEncoder: "videotoolbox",
     });
     expect(text).toBe(`${saved}\n${reduced}`);
+    expect(text.split("\n")[1]).toBe(reduced);
     expect(text).not.toContain("输出文件已保存。");
     expect(text).not.toContain(trialNote);
     expect(text).not.toContain("实际体积超出了参考目标");

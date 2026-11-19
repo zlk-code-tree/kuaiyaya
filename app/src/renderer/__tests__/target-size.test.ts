@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultTargetMB } from "../../shared/bitrate";
-import { applySlider, applyTyped, fromFileSize, tooLarge } from "../state/target-size";
+import { carriedCapMB, queueTargetTextFromReady, readSharedTarget } from "../../shared/queue";
+import { applySlider, applyTyped, fromFileSize, sliderThumbMB, tooLarge } from "../state/target-size";
 
 describe("ready page target", () => {
   it("starts empty and does not prefill half of the source", () => {
@@ -12,10 +13,27 @@ describe("ready page target", () => {
     expect(tooLarge(state)).toBe(false);
   });
 
-  it("carries a filled cap back and stays empty when the queue field was empty", () => {
+  it("carries a filled cap both ways and keeps an empty field empty", () => {
     const size = 100 * 1024 * 1024;
-    expect(fromFileSize(size, 30).targetMB).toBe(30);
-    expect(fromFileSize(size, null).targetMB).toBeNull();
+    expect(queueTargetTextFromReady(30)).toBe("30");
+    expect(readSharedTarget(queueTargetTextFromReady(30))).toEqual({ kind: "shared", mb: 30 });
+    expect(fromFileSize(size, carriedCapMB(readSharedTarget("30"))).targetMB).toBe(30);
+
+    expect(queueTargetTextFromReady(null)).toBe("");
+    expect(readSharedTarget(queueTargetTextFromReady(null))).toEqual({ kind: "quality" });
+    expect(fromFileSize(size, carriedCapMB(readSharedTarget(""))).targetMB).toBeNull();
+    expect(queueTargetTextFromReady(null)).not.toBe("1");
+    expect(fromFileSize(size).targetMB).not.toBe(1);
+  });
+
+  it("does not give an empty cap a slider position at 1 MB", () => {
+    const size = 100 * 1024 * 1024;
+    const empty = fromFileSize(size);
+    expect(sliderThumbMB(empty)).toBeNull();
+    expect(sliderThumbMB(applyTyped(fromFileSize(size, 20), ""))).toBeNull();
+    expect(sliderThumbMB(applyTyped(empty, "abc"))).toBeNull();
+    expect(sliderThumbMB(fromFileSize(size, 1))).toBe(1);
+    expect(sliderThumbMB(fromFileSize(size, 24))).toBe(24);
   });
 
   it("returns to empty when the field is cleared and does not invent a number", () => {

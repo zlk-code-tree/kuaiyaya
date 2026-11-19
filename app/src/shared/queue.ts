@@ -104,6 +104,13 @@ export function carriedCapMB(read: SharedTarget): number | null {
   return read.kind === "shared" ? read.mb : null;
 }
 
+/** 从准备页进入队列时写入输入框的文字。没填就空着，不要写成 1 或一半。 */
+export function queueTargetTextFromReady(readyMB: number | null): string {
+  if (readyMB == null || !Number.isFinite(readyMB)) return "";
+  const mb = Math.round(readyMB);
+  return mb >= 1 ? String(mb) : "";
+}
+
 export function queueSummaryLine(summary: QueueSummary): string {
   let line = `成功 ${summary.success}，失败 ${summary.failed}，已取消 ${summary.cancelled}。`;
   if (summary.skipped > 0) line += `另有 ${summary.skipped} 条已跳过。`;
