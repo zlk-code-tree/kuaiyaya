@@ -50,7 +50,7 @@ export interface QueueItemSnapshot {
   qualityReduced: boolean;
   elapsedSec: number | null;
   encoder: EncoderKind | null;
-  /** 只有正在压缩的那一条会带进度，避免和另一套计时对不上。 */
+  /** 正在压缩的每一条各自带进度，互不覆盖。 */
   progress: ProgressEvent | null;
 }
 
@@ -63,9 +63,52 @@ export interface QueueSummary {
 
 export interface QueueSnapshot {
   phase: QueuePhase;
-  activeId: string | null;
+  /** 这一次正在压的全部条目，按列表原顺序。 */
+  activeIds: string[];
   items: QueueItemSnapshot[];
   summary: QueueSummary | null;
+}
+
+/** 渲染进程只读。档位由主进程定，不做成设置。 */
+export interface QueueConcurrencyInfo {
+  limit: 1 | 2 | 3;
+  source: "auto";
+}
+
+export const QUEUE_LEAD_PENDING = "正在确认这台设备这一次同时压几支。";
+
+export function normalizeDeviceLimit(limit: number): 1 | 2 | 3 {
+  if (!Number.isFinite(limit) || limit < 2) return 1;
+  if (limit >= 3) return 3;
+  return 2;
+}
+
+/**
+ * 说明里的数字：min(设备档位, 此刻真正要压的条数)。
+ * 跳过的和不读得出来的不算。0 表示这一次没有要压的。
+ */
+export function displayedQueueSlots(deviceLimit: number, compressibleCount: number): number {
+  const limit = normalizeDeviceLimit(deviceLimit);
+  const count = Number.isFinite(compressibleCount) ? Math.max(0, Math.floor(compressibleCount)) : 0;
+  return Math.min(limit, count);
+}
+
+/** 1 支或 0 支都写「按顺序一支一支压」，不写「同时压 1 支」。 */
+export function queueConcurrencyLine(slots: number): string {
+  if (slots >= 2) {
+    return `这一次同时压 ${Math.floor(slots)} 支。由这台设备自动决定，单个失败不影响其余。`;
+  }
+  return "这一次按顺序一支一支压。由这台设备自动决定，单个失败不影响其余。";
+}
+
+/**
+ * frozen 有值时，本轮这句话不再跟着完成、取消或列表变化改。
+ * deviceLimit 还没从主进程读到时，不猜档位。
+ */
+export function resolveQueueLead(deviceLimit: number | null, compressibleCount: number, frozen: string | null): string {
+  if (frozen != null) return frozen;
+  if (deviceLimit == null) return QUEUE_LEAD_PENDING;
+  return queueConcurrencyLine(displayedQueueSlots(deviceLimit, compressibleCount));
 }
 
 export type SharedTarget =

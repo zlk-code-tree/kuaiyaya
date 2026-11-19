@@ -1,5 +1,5 @@
 import { MSG } from "../shared/messages";
-import { carriedCapMB, itemTargetMB, queueStartAllowed, queueSummaryLine, queueTargetTextFromReady, readSharedTarget, targetSkipsItem, type QueueItemSnapshot, type QueueSnapshot, type QueueStartItem } from "../shared/queue";
+import { carriedCapMB, displayedQueueSlots, itemTargetMB, normalizeDeviceLimit, queueConcurrencyLine, queueStartAllowed, queueSummaryLine, queueTargetTextFromReady, readSharedTarget, resolveQueueLead, targetSkipsItem, type QueueItemSnapshot, type QueueSnapshot, type QueueStartItem } from "../shared/queue";
 import type { AppScreen, LicenseState, ProbeInfo, ProgressEvent } from "../shared/types";
 import { isLikelyVideoPath } from "../shared/video-ext";
 import { doneSubtitle } from "./done-sub";
@@ -20,7 +20,7 @@ export interface QueueController {
 }
 
 interface QueueDeps {
-  api: Pick<Window["kuaiyaya"], "probe" | "selectVideo" | "queueStart" | "queueCancelItem" | "queueCancelAll" | "queueRetry" | "onQueueUpdate" | "openFile" | "revealInFinder">;
+  api: Pick<Window["kuaiyaya"], "probe" | "selectVideo" | "queueStart" | "queueCancelItem" | "queueCancelAll" | "queueRetry" | "getQueueConcurrency" | "onQueueUpdate" | "openFile" | "revealInFinder">;
   getScreen: () => AppScreen;
   setScreen: (id: AppScreen) => void;
   currentProbe: () => ProbeInfo | null;
@@ -64,9 +64,14 @@ export function createQueueController(deps: QueueDeps): QueueController {
   let drafts: Draft[] = [];
   let started = false;
   let waitingKey = false;
+  let arming = false;
   let live: QueueSnapshot | null = null;
   let seq = 0;
   let ingestGen = 0;
+  let deviceLimit: number | null = null;
+  let frozenLine: string | null = null;
+  let loadingConcurrency = false;
+  let seenRunning = new Set<string>();
 
   function nextId(): string {
     seq += 1;
@@ -74,7 +79,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
   }
 
   function isRunning(): boolean {
-    if (waitingKey) return true;
+    if (waitingKey || arming) return true;
     if (live?.phase === "running") return true;
     return started && live == null;
   }
@@ -120,7 +125,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
       deps.setScreen("screen-key");
       return;
     }
-    if (started || waitingKey) {
+    if (started || waitingKey || arming) {
       toast(live?.phase === "done" ? "这批已结束，返回后可以再加入视频。" : "已经开始，不能再加入文件");
       return;
     }
@@ -159,7 +164,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
         added.push({ id: nextId(), filePath, probe: null, error: cleanError(err) });
       }
     }
-    if (gen !== ingestGen || started || waitingKey) return;
+    if (gen !== ingestGen || started || waitingKey || arming) return;
 
     const base = currentBase(mode);
     const have = new Set(base.map((item) => item.filePath));
@@ -189,6 +194,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
       setQueueTargetText(fromReady ? queueTargetTextFromReady(deps.currentReadyCap()) : "");
     }
     deps.setScreen("screen-queue");
+    requestConcurrency();
     render();
   }
 
@@ -198,13 +204,35 @@ export function createQueueController(deps: QueueDeps): QueueController {
     live = null;
     started = false;
     waitingKey = false;
+    frozenLine = null;
+    seenRunning = new Set();
     clearTargetField();
     deps.goIdle();
     deps.onActivity();
   }
 
+  function compressibleCount(): number {
+    return drafts.filter((item) => item.probe != null && !draftSkipped(item)).length;
+  }
+
+  function renderLead(): void {
+    $("queueLead").textContent = resolveQueueLead(deviceLimit, compressibleCount(), frozenLine);
+  }
+
+  function requestConcurrency(): void {
+    if (deviceLimit != null || loadingConcurrency) return;
+    loadingConcurrency = true;
+    void deps.api.getQueueConcurrency().then((info) => {
+      deviceLimit = normalizeDeviceLimit(info.limit);
+      loadingConcurrency = false;
+      if (frozenLine == null && deps.getScreen() === "screen-queue") render();
+    }).catch(() => {
+      loadingConcurrency = false;
+    });
+  }
+
   function removeDraft(id: string): void {
-    if (started || waitingKey) return;
+    if (started || waitingKey || arming) return;
     drafts = drafts.filter((item) => item.id !== id);
     if (drafts.length === 1 && drafts[0]?.probe) {
       const info = drafts[0].probe;
@@ -236,7 +264,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
   function syncStartButton(): void {
     const button = $("queueStart") as HTMLButtonElement;
     const read = readSharedTarget(targetField().value);
-    if (waitingKey) {
+    if (waitingKey || arming) {
       button.disabled = true;
       button.classList.add("waiting");
       button.innerHTML = '<span class="spinner"></span>请稍候…';
@@ -281,14 +309,15 @@ export function createQueueController(deps: QueueDeps): QueueController {
     const running = isRunning();
     const failed = live?.summary?.failed ?? 0;
     $("queueStart").classList.toggle("hidden", started);
-    $("queueAdd").classList.toggle("hidden", started || waitingKey);
+    $("queueAdd").classList.toggle("hidden", started || waitingKey || arming);
     $("queueCancelAll").classList.toggle("hidden", live?.phase !== "running");
     $("queueRetryFailed").classList.toggle("hidden", !(started && live?.phase === "done" && failed > 0));
     $("queueBack").classList.toggle("hidden", running);
-    targetField().disabled = started || waitingKey;
+    targetField().disabled = started || waitingKey || arming;
     syncStartButton();
     renderHint();
     renderSummary();
+    renderLead();
     deps.onActivity();
   }
 
@@ -368,6 +397,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
   function renderLiveRow(item: QueueItemSnapshot): HTMLElement {
     const row = document.createElement("div");
     row.className = "queue-row";
+    row.dataset.queueId = item.id;
     const top = document.createElement("div");
     top.className = "queue-row-top";
     const meta = document.createElement("div");
@@ -413,7 +443,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
       addButton(actions, "取消", () => void deps.api.queueCancelItem(item.id));
     } else if (item.status === "running") {
       addButton(actions, "取消", () => {
-        deps.askConfirm(MSG.closeWhileWorkTitle, MSG.closeWhileWork, "确定取消", () => {
+        deps.askConfirm(MSG.closeWhileWorkTitle, MSG.queueCancelOneDetail, "确定取消", () => {
           void deps.api.queueCancelItem(item.id);
         });
       });
@@ -432,13 +462,32 @@ export function createQueueController(deps: QueueDeps): QueueController {
     return row;
   }
 
+  function revealNewestRunning(list: HTMLElement, runningIds: string[]): void {
+    const fresh = runningIds.filter((id) => !seenRunning.has(id));
+    seenRunning = new Set(runningIds);
+    const newest = fresh.at(-1);
+    if (!newest) return;
+    const rows = list.querySelectorAll<HTMLElement>("[data-queue-id]");
+    for (const row of rows) {
+      if (row.dataset.queueId !== newest) continue;
+      row.scrollIntoView({ block: "nearest" });
+      return;
+    }
+  }
+
   function render(): void {
     const list = $("queueList");
+    const scrollTop = list.scrollTop;
     list.replaceChildren();
     if (started && live) {
       for (const item of live.items) list.append(renderLiveRow(item));
+      const runningIds = live.items.filter((item) => item.status === "running").map((item) => item.id);
+      list.scrollTop = scrollTop;
+      revealNewestRunning(list, runningIds);
     } else {
+      seenRunning = new Set();
       for (const item of drafts) list.append(renderDraftRow(item));
+      list.scrollTop = scrollTop;
     }
     syncChrome();
   }
@@ -458,21 +507,30 @@ export function createQueueController(deps: QueueDeps): QueueController {
   }
 
   async function onStart(): Promise<void> {
-    if (started || waitingKey || deps.isSingleBusy()) return;
+    if (started || waitingKey || arming || deps.isSingleBusy()) return;
     const read = readSharedTarget(targetField().value);
     if (!queueStartAllowed(read)) return;
     const items = payload();
-    const state = await deps.license();
-    if (!state.hasStoredKey) {
-      deps.showAlert("尚未开通", "输入有效 Key 后才能开始压缩。不需要注册或登录。");
-      return;
-    }
-    waitingKey = !state.verified;
+    arming = true;
     syncChrome();
     try {
+      const state = await deps.license();
+      if (!state.hasStoredKey) {
+        deps.showAlert("尚未开通", "输入有效 Key 后才能开始压缩。不需要注册或登录。");
+        return;
+      }
+      waitingKey = !state.verified;
+      syncChrome();
+      if (deviceLimit == null) {
+        const info = await deps.api.getQueueConcurrency();
+        deviceLimit = normalizeDeviceLimit(info.limit);
+      }
+      frozenLine = queueConcurrencyLine(displayedQueueSlots(deviceLimit, compressibleCount()));
+      renderLead();
       const result = await deps.api.queueStart({ items });
       if (!result.ok) {
         waitingKey = false;
+        frozenLine = null;
         if (!live) started = false;
         syncChrome();
         if (result.code === "cancelled") return;
@@ -487,17 +545,22 @@ export function createQueueController(deps: QueueDeps): QueueController {
       render();
     } catch (err) {
       waitingKey = false;
+      frozenLine = null;
       if (!live) started = false;
       syncChrome();
       deps.handleStartError(err);
+    } finally {
+      arming = false;
+      if (!started) syncChrome();
     }
   }
 
   function mount(): void {
+    requestConcurrency();
     targetField().addEventListener("input", () => render());
     $("queueStart").addEventListener("click", () => void onStart());
     $("queueAdd").addEventListener("click", () => {
-      if (started || waitingKey || deps.isSingleBusy()) return;
+      if (started || waitingKey || arming || deps.isSingleBusy()) return;
       void deps.api.selectVideo().then((paths) => {
         if (paths.length > 0) return ingest(paths, "add");
         return undefined;
@@ -511,7 +574,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
     });
     $("queueRetryFailed").addEventListener("click", () => void deps.api.queueRetry({ allFailed: true }));
     deps.api.onQueueUpdate((snapshot) => {
-      if (!started && !waitingKey) return;
+      if (!started && !waitingKey && !arming) return;
       live = snapshot;
       if (snapshot.phase === "running" || snapshot.phase === "done") {
         started = true;

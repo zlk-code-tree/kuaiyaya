@@ -39,9 +39,11 @@ export const MSG = {
   notSmaller: "压缩后体积未小于原片，未保存结果；原片没有改动。",
   missedCap: "未能压到目标体积，未保存结果；原片没有改动。",
   queueUnreadable: "无法读取该视频。原片没有改动。",
+  queueCancelOneDetail:
+    "只取消这一支，其他正在压的会继续。未完成的临时文件会被清理，原片不会改动。",
   queueCloseTitle: "确定取消全部？",
   queueCloseDetail:
-    "队列还没完成。确定后将停止当前压缩，未开始的标为已取消，并清理临时文件。原片不会改动，也不会留下半成品。",
+    "队列还没完成。确定后将停止所有正在压缩的视频，未开始的标为已取消，并清理临时文件。原片不会改动，也不会留下半成品。",
 } as const;
 
 export const MAINTAINER = "黑曼巴的紫金王朝";

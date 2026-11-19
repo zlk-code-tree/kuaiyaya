@@ -34,9 +34,15 @@ export interface BatchQueueDeps {
   /** 一轮开始时调用一次。通过后，本轮剩余条目和重试都不再调用。 */
   decideStart: () => Promise<StartDecision>;
   prepare: (item: { id: string; filePath: string; targetMB: number | null }) => Promise<PrepareResult>;
-  /** 必须走现有 CompressJob（或测试替身），不要在队列里另写编码。 */
+  /** 必须走现有 CompressJob（或测试替身），不要在队列里另写编码。每条运行中的条目各调一次。 */
   runJob: (item: QueueItemSnapshot, probe: ProbeInfo, hooks: QueueRunHooks) => Promise<void>;
-  cancelJob: () => Promise<void>;
+  /** 只取消这一支对应的 Job。 */
+  cancelJob: (itemId: string) => Promise<void>;
+  /**
+   * 本轮开始时读一次设备档位。重试（排到队尾，或整批结束后立刻再压）沿用这次的结果，不再重读。
+   * 中途某一支硬编回退软编，也不要靠再次调用它来降档。
+   */
+  concurrencyLimit: () => Promise<number> | number;
   onUpdate?: (snapshot: QueueSnapshot) => void;
 }
 
@@ -68,17 +74,25 @@ function cloneItem(item: QueueItemSnapshot): QueueItemSnapshot {
   return { ...item, progress: item.progress ? { ...item.progress } : null };
 }
 
+function clampLimit(value: number): 1 | 2 | 3 {
+  if (!Number.isFinite(value) || value < 2) return 1;
+  if (value >= 3) return 3;
+  return 2;
+}
+
 /**
- * 串行批量队列。编码、缩放、临时文件清理都留在 CompressJob。
- * Key 只在 start() 里决定一次。
+ * 有限并发的批量队列。编码、缩放、临时文件清理都留在各自的 CompressJob。
+ * 同时处于准备或编码中的条目最多 batchLimit 条；准备失败或跳过会立刻让出名额。
+ * Key 只在 start() 里决定一次。本轮档位在 start() 里定死，重试不再改。
  */
 export class BatchQueue {
   private items: QueueItemSnapshot[] = [];
   private phase: QueuePhase = "idle";
-  private activeId: string | null = null;
+  private batchLimit: 1 | 2 | 3 = 1;
+  private inflight = 0;
+  private readonly claimed = new Set<string>();
   private starting = false;
   private deciding = false;
-  private pumping = false;
   private abortStart = false;
   private pending: Promise<void> = Promise.resolve();
   private tail: Promise<void> = Promise.resolve();
@@ -86,13 +100,13 @@ export class BatchQueue {
   constructor(private readonly deps: BatchQueueDeps) {}
 
   isBusy(): boolean {
-    return this.starting || this.deciding || this.pumping || this.phase === "running";
+    return this.starting || this.deciding || this.inflight > 0 || this.phase === "running";
   }
 
   snapshot(): QueueSnapshot {
     return {
       phase: this.phase,
-      activeId: this.activeId,
+      activeIds: this.items.filter((item) => item.status === "running").map((item) => item.id),
       items: this.items.map(cloneItem),
       summary: this.phase === "done" ? this.summarize() : null,
     };
@@ -106,7 +120,13 @@ export class BatchQueue {
 
   async whenSettled(): Promise<void> {
     await this.pending;
-    await this.tail;
+    // 空位续跑会在前一条的 finally 里把新任务接到 tail 后面。
+    // 这里要跟着新的 tail 走，不能只等开始时已经挂上的那一段。
+    for (;;) {
+      const tail = this.tail;
+      await tail;
+      if (tail === this.tail && this.inflight === 0 && !this.starting && !this.deciding) return;
+    }
   }
 
   cancelItem(id: string): void {
@@ -117,9 +137,10 @@ export class BatchQueue {
       item.message = MSG.cancelled;
       item.progress = null;
       this.emit();
+      this.settle();
       return;
     }
-    if (item.status === "running") void this.deps.cancelJob().catch(() => undefined);
+    if (item.status === "running") void this.deps.cancelJob(item.id).catch(() => undefined);
   }
 
   cancelAll(): void {
@@ -131,7 +152,9 @@ export class BatchQueue {
         item.progress = null;
       }
     }
-    if (this.items.some((item) => item.status === "running")) void this.deps.cancelJob().catch(() => undefined);
+    for (const item of this.items) {
+      if (item.status === "running") void this.deps.cancelJob(item.id).catch(() => undefined);
+    }
     this.emit();
   }
 
@@ -155,7 +178,7 @@ export class BatchQueue {
   }
 
   private async begin(input: QueueStartItem[]): Promise<QueueStartResult> {
-    if (this.phase === "running" || this.deciding || this.starting) {
+    if (this.phase === "running" || this.deciding || this.starting || this.inflight > 0) {
       return { ok: false, code: "busy", message: "正在处理其他任务，请稍候。" };
     }
     if (input.length === 0) return { ok: false, message: "没有可以压缩的视频。" };
@@ -170,11 +193,12 @@ export class BatchQueue {
         const message = decision.action === "block" ? decision.message : MSG.networkStart;
         return { ok: false, code, message };
       }
+      this.batchLimit = await this.readLimit();
+      if (this.abortStart) return { ok: false, code: "cancelled", message: MSG.cancelled };
       this.items = input.map(seed);
-      this.activeId = null;
       this.phase = "running";
       this.emit();
-      this.kick();
+      this.launch();
       return { ok: true };
     } finally {
       this.deciding = false;
@@ -182,10 +206,18 @@ export class BatchQueue {
     }
   }
 
+  private async readLimit(): Promise<1 | 2 | 3> {
+    try {
+      return clampLimit(await this.deps.concurrencyLimit());
+    } catch {
+      return 1;
+    }
+  }
+
   private resume(): void {
     if (this.items.some((item) => item.status === "waiting")) this.phase = "running";
     this.emit();
-    this.kick();
+    this.launch();
   }
 
   private requeue(item: QueueItemSnapshot): void {
@@ -201,31 +233,38 @@ export class BatchQueue {
     this.items = this.items.filter((entry) => entry !== item).concat(item);
   }
 
-  private kick(): void {
-    if (this.pumping) return;
-    if (!this.items.some((item) => item.status === "waiting")) return;
-    this.pumping = true;
-    const run = this.pump().finally(() => {
-      this.pumping = false;
-    });
-    this.tail = this.tail.then(() => run).then(() => undefined, () => undefined);
+  /**
+   * 有空位就按原顺序启动下一条。await 会把准备让回事件循环，
+   * 所以这一轮循环能在任何一条编码开始前把空位填满。
+   */
+  private launch(): void {
+    while (this.inflight < this.batchLimit) {
+      const next = this.items.find((item) => item.status === "waiting" && !this.claimed.has(item.id));
+      if (!next) return;
+      this.claimed.add(next.id);
+      this.inflight += 1;
+      const run = this.runOne(next).finally(() => {
+        this.inflight -= 1;
+        this.claimed.delete(next.id);
+        this.launch();
+        this.settle();
+      });
+      this.tail = this.tail.then(() => run.then(() => undefined, () => undefined));
+    }
   }
 
-  private async pump(): Promise<void> {
-    for (;;) {
-      const next = this.items.find((item) => item.status === "waiting");
-      if (!next) {
-        this.phase = "done";
-        this.activeId = null;
-        this.emit();
-        if (this.items.some((item) => item.status === "waiting")) {
-          this.phase = "running";
-          continue;
-        }
-        return;
-      }
+  private settle(): void {
+    if (this.inflight > 0) return;
+    if (this.items.some((item) => item.status === "waiting" || item.status === "running")) {
+      if (this.items.some((item) => item.status === "waiting")) this.launch();
+      return;
+    }
+    if (this.phase !== "running") return;
+    this.phase = "done";
+    this.emit();
+    if (this.items.some((item) => item.status === "waiting")) {
       this.phase = "running";
-      await this.runOne(next);
+      this.launch();
     }
   }
 
@@ -266,7 +305,6 @@ export class BatchQueue {
     item.status = "running";
     item.progress = null;
     item.message = "";
-    this.activeId = item.id;
     this.emit();
     let saw = false;
     const hooks: QueueRunHooks = {
@@ -287,7 +325,6 @@ export class BatchQueue {
         item.elapsedSec = event.elapsedSec;
         item.encoder = event.encoder;
         item.message = "";
-        if (this.activeId === item.id) this.activeId = null;
       },
       onFail: (event) => {
         saw = true;
@@ -296,7 +333,6 @@ export class BatchQueue {
         item.message = event.message;
         item.elapsedSec = null;
         item.encoder = null;
-        if (this.activeId === item.id) this.activeId = null;
       },
     };
     try {
@@ -306,14 +342,12 @@ export class BatchQueue {
         item.status = "failed";
         item.progress = null;
         item.message = err instanceof Error && err.message ? err.message : MSG.encodeFail;
-        if (this.activeId === item.id) this.activeId = null;
       }
     }
     if (!saw && item.status === "running") {
       item.status = "failed";
       item.progress = null;
       item.message = MSG.encodeFail;
-      if (this.activeId === item.id) this.activeId = null;
     }
     this.emit();
   }
