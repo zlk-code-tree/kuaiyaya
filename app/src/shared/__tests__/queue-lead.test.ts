@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { MSG } from "../messages";
 import {
   QUEUE_LEAD_PENDING,
+  countCompressibleDrafts,
   displayedQueueSlots,
   queueConcurrencyLine,
+  queueStartDisabled,
   resolveQueueLead,
+  type CompressibleDraft,
 } from "../queue";
 
 const SERIAL = "这一次按顺序一支一支压。由这台设备自动决定，单个失败不影响其余。";
@@ -44,6 +47,32 @@ describe("queue concurrency copy", () => {
     expect(resolveQueueLead(3, 0, frozen)).toBe(frozen);
     expect(resolveQueueLead(null, 4, frozen)).toBe(frozen);
     expect(resolveQueueLead(2, 1, null)).toBe(SERIAL);
+  });
+
+  it("does not count files still being read, failed reads, or skipped items", () => {
+    const reading: CompressibleDraft = { reading: true, probe: { sizeBytes: 80 }, skipped: false };
+    const ready: CompressibleDraft = { probe: { sizeBytes: 80 }, skipped: false };
+    const failed: CompressibleDraft = { probe: null, skipped: false };
+    const skipped: CompressibleDraft = { probe: { sizeBytes: 10 }, skipped: true };
+    expect(countCompressibleDrafts([reading, ready, failed, skipped])).toBe(1);
+    expect(queueConcurrencyLine(displayedQueueSlots(2, countCompressibleDrafts([reading, ready])))).toBe(SERIAL);
+    const settled = countCompressibleDrafts([
+      { ...reading, reading: false },
+      ready,
+    ]);
+    expect(settled).toBe(2);
+    expect(queueConcurrencyLine(displayedQueueSlots(2, settled))).toBe(
+      "这一次同时压 2 支。由这台设备自动决定，单个失败不影响其余。",
+    );
+  });
+
+  it("disables start only while ingest is in flight, and still allows an all-skipped batch afterward", () => {
+    expect(queueStartDisabled({ started: false, ingesting: true, target: { kind: "quality" } })).toBe(true);
+    expect(queueStartDisabled({ started: false, ingesting: true, target: { kind: "shared", mb: 40 } })).toBe(true);
+    expect(queueStartDisabled({ started: false, ingesting: false, target: { kind: "shared", mb: 40 } })).toBe(false);
+    expect(queueStartDisabled({ started: false, ingesting: false, target: { kind: "quality" } })).toBe(false);
+    expect(queueStartDisabled({ started: false, ingesting: false, target: { kind: "invalid" } })).toBe(true);
+    expect(queueStartDisabled({ started: true, ingesting: false, target: { kind: "quality" } })).toBe(true);
   });
 
   it("keeps the single-item cancel title and says the others continue", () => {

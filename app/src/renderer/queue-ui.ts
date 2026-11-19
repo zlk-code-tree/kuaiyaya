@@ -1,5 +1,5 @@
 import { MSG } from "../shared/messages";
-import { carriedCapMB, displayedQueueSlots, itemTargetMB, normalizeDeviceLimit, queueConcurrencyLine, queueStartAllowed, queueSummaryLine, queueTargetTextFromReady, readSharedTarget, resolveQueueLead, targetSkipsItem, type QueueItemSnapshot, type QueueSnapshot, type QueueStartItem } from "../shared/queue";
+import { carriedCapMB, countCompressibleDrafts, displayedQueueSlots, itemTargetMB, normalizeDeviceLimit, queueConcurrencyLine, queueStartAllowed, queueStartDisabled, queueSummaryLine, queueTargetTextFromReady, readSharedTarget, resolveQueueLead, targetSkipsItem, type QueueItemSnapshot, type QueueSnapshot, type QueueStartItem } from "../shared/queue";
 import type { AppScreen, LicenseState, ProbeInfo, ProgressEvent } from "../shared/types";
 import { isLikelyVideoPath } from "../shared/video-ext";
 import { doneSubtitle } from "./done-sub";
@@ -68,6 +68,8 @@ export function createQueueController(deps: QueueDeps): QueueController {
   let live: QueueSnapshot | null = null;
   let seq = 0;
   let ingestGen = 0;
+  /** 叠在一起的导入次数。后一次还在读时，前一次结束也不能把开始按钮放开。 */
+  let ingestDepth = 0;
   let deviceLimit: number | null = null;
   let frozenLine: string | null = null;
   let loadingConcurrency = false;
@@ -119,83 +121,94 @@ export function createQueueController(deps: QueueDeps): QueueController {
     return [];
   }
 
+  function ingesting(): boolean {
+    return ingestDepth > 0;
+  }
+
   async function ingest(paths: string[], mode: "add" | "replace"): Promise<void> {
-    if (deps.isSingleBusy()) return;
-    if (!deps.hasLicense()) {
-      deps.setScreen("screen-key");
-      return;
-    }
-    if (started || waitingKey || arming) {
-      toast(live?.phase === "done" ? "这批已结束，返回后可以再加入视频。" : "已经开始，不能再加入文件");
-      return;
-    }
-    const gen = ++ingestGen;
-    let ignored = 0;
-    let duplicated = 0;
-    const known = new Set(currentBase(mode).map((item) => item.filePath));
-    const fresh: string[] = [];
-    for (const filePath of paths) {
-      if (!filePath) continue;
-      if (!isLikelyVideoPath(filePath)) {
-        ignored += 1;
-        continue;
-      }
-      if (known.has(filePath)) {
-        duplicated += 1;
-        continue;
-      }
-      known.add(filePath);
-      fresh.push(filePath);
-    }
-    const notes: string[] = [];
-    if (ignored > 0) notes.push(`已忽略 ${ignored} 个非视频文件`);
-    if (duplicated > 0) notes.push("同一视频已在列表中，未重复加入");
-    if (notes.length > 0) toast(notes.join("，"));
-
-    const added: Draft[] = [];
-    for (const filePath of fresh) {
-      if (gen !== ingestGen || started) return;
-      try {
-        const info = await deps.api.probe(filePath);
-        if (gen !== ingestGen || started) return;
-        added.push({ id: nextId(), filePath: info.path, probe: info, error: null });
-      } catch (err) {
-        if (gen !== ingestGen || started) return;
-        added.push({ id: nextId(), filePath, probe: null, error: cleanError(err) });
-      }
-    }
-    if (gen !== ingestGen || started || waitingKey || arming) return;
-
-    const base = currentBase(mode);
-    const have = new Set(base.map((item) => item.filePath));
-    const next = base.concat(added.filter((item) => !have.has(item.filePath)));
-    if (next.length === 0) return;
-    if (next.length === 1) {
-      const only = next[0];
-      if (!only) return;
-      if (only.probe) {
-        if (deps.getScreen() === "screen-ready" && deps.currentProbe()?.path === only.filePath) return;
-        openSingle(only.probe);
+    ingestDepth += 1;
+    try {
+      syncChrome();
+      if (deps.isSingleBusy()) return;
+      if (!deps.hasLicense()) {
+        deps.setScreen("screen-key");
         return;
       }
-      deps.showAlert("无法打开文件", only.error ?? MSG.queueUnreadable);
-      if (deps.getScreen() === "screen-queue") {
-        drafts = [];
-        clearTargetField();
-        deps.goIdle();
+      if (started || waitingKey || arming) {
+        toast(live?.phase === "done" ? "这批已结束，返回后可以再加入视频。" : "已经开始，不能再加入文件");
+        return;
       }
-      return;
+      const gen = ++ingestGen;
+      let ignored = 0;
+      let duplicated = 0;
+      const known = new Set(currentBase(mode).map((item) => item.filePath));
+      const fresh: string[] = [];
+      for (const filePath of paths) {
+        if (!filePath) continue;
+        if (!isLikelyVideoPath(filePath)) {
+          ignored += 1;
+          continue;
+        }
+        if (known.has(filePath)) {
+          duplicated += 1;
+          continue;
+        }
+        known.add(filePath);
+        fresh.push(filePath);
+      }
+      const notes: string[] = [];
+      if (ignored > 0) notes.push(`已忽略 ${ignored} 个非视频文件`);
+      if (duplicated > 0) notes.push("同一视频已在列表中，未重复加入");
+      if (notes.length > 0) toast(notes.join("，"));
+
+      const added: Draft[] = [];
+      for (const filePath of fresh) {
+        if (gen !== ingestGen || started) return;
+        try {
+          const info = await deps.api.probe(filePath);
+          if (gen !== ingestGen || started) return;
+          added.push({ id: nextId(), filePath: info.path, probe: info, error: null });
+        } catch (err) {
+          if (gen !== ingestGen || started) return;
+          added.push({ id: nextId(), filePath, probe: null, error: cleanError(err) });
+        }
+      }
+      if (gen !== ingestGen || started || waitingKey || arming) return;
+
+      const base = currentBase(mode);
+      const have = new Set(base.map((item) => item.filePath));
+      const next = base.concat(added.filter((item) => !have.has(item.filePath)));
+      if (next.length === 0) return;
+      if (next.length === 1) {
+        const only = next[0];
+        if (!only) return;
+        if (only.probe) {
+          if (deps.getScreen() === "screen-ready" && deps.currentProbe()?.path === only.filePath) return;
+          openSingle(only.probe);
+          return;
+        }
+        deps.showAlert("无法打开文件", only.error ?? MSG.queueUnreadable);
+        if (deps.getScreen() === "screen-queue") {
+          drafts = [];
+          clearTargetField();
+          deps.goIdle();
+        }
+        return;
+      }
+      const entering = deps.getScreen() !== "screen-queue";
+      const fromReady = deps.getScreen() === "screen-ready";
+      drafts = next;
+      live = null;
+      if (entering) {
+        setQueueTargetText(fromReady ? queueTargetTextFromReady(deps.currentReadyCap()) : "");
+      }
+      deps.setScreen("screen-queue");
+      requestConcurrency();
+      render();
+    } finally {
+      ingestDepth -= 1;
+      syncChrome();
     }
-    const entering = deps.getScreen() !== "screen-queue";
-    const fromReady = deps.getScreen() === "screen-ready";
-    drafts = next;
-    live = null;
-    if (entering) {
-      setQueueTargetText(fromReady ? queueTargetTextFromReady(deps.currentReadyCap()) : "");
-    }
-    deps.setScreen("screen-queue");
-    requestConcurrency();
-    render();
   }
 
   function leave(): void {
@@ -212,7 +225,10 @@ export function createQueueController(deps: QueueDeps): QueueController {
   }
 
   function compressibleCount(): number {
-    return drafts.filter((item) => item.probe != null && !draftSkipped(item)).length;
+    return countCompressibleDrafts(drafts.map((item) => ({
+      probe: item.probe,
+      skipped: draftSkipped(item),
+    })));
   }
 
   function renderLead(): void {
@@ -272,7 +288,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
     }
     button.classList.remove("waiting");
     button.textContent = "开始压缩";
-    button.disabled = started || !queueStartAllowed(read);
+    button.disabled = queueStartDisabled({ started, ingesting: ingesting(), target: read });
   }
 
   function renderHint(): void {
@@ -507,7 +523,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
   }
 
   async function onStart(): Promise<void> {
-    if (started || waitingKey || arming || deps.isSingleBusy()) return;
+    if (started || waitingKey || arming || ingesting() || deps.isSingleBusy()) return;
     const read = readSharedTarget(targetField().value);
     if (!queueStartAllowed(read)) return;
     const items = payload();

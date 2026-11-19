@@ -83,6 +83,26 @@ export function normalizeDeviceLimit(limit: number): 1 | 2 | 3 {
   return 2;
 }
 
+/** 队列说明用的一条草稿。reading 的还在读，probe 为空是读失败。 */
+export interface CompressibleDraft {
+  reading?: boolean;
+  probe: unknown;
+  skipped: boolean;
+}
+
+/**
+ * 此刻真正要压的条数。还在读的、读失败的、会跳过的都不算。
+ * 读完之前不要把它们算进去，避免说明从「按顺序」跳成「同时压 N 支」。
+ */
+export function countCompressibleDrafts(items: readonly CompressibleDraft[]): number {
+  let count = 0;
+  for (const item of items) {
+    if (item.reading || item.probe == null || item.skipped) continue;
+    count += 1;
+  }
+  return count;
+}
+
 /**
  * 说明里的数字：min(设备档位, 此刻真正要压的条数)。
  * 跳过的和不读得出来的不算。0 表示这一次没有要压的。
@@ -140,6 +160,14 @@ export function targetSkipsItem(targetMB: number | null, sizeBytes: number): boo
 /** 非法数字才不能开始。全部都会被跳过时仍然允许开始，点了之后出汇总。 */
 export function queueStartAllowed(read: SharedTarget): boolean {
   return read.kind !== "invalid";
+}
+
+/**
+ * 读取还没结束时不能开始。目标本身合法时，哪怕每支都会跳过，读完后仍可以开始。
+ */
+export function queueStartDisabled(opts: { started: boolean; ingesting: boolean; target: SharedTarget }): boolean {
+  if (opts.started || opts.ingesting) return true;
+  return !queueStartAllowed(opts.target);
 }
 
 /** 删到只剩一支时，只有已经填了的上限才带回准备页。 */
