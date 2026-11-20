@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain, clipboard, app } from "electron";
 import { readFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import type { QueueStartItem, QueueStartRequest } from "../shared/queue";
+import type { QueueConcurrencyInfo, QueueStartItem, QueueStartRequest } from "../shared/queue";
 import type { EncoderCaps, ProbeInfo, QualityAnalysis, StartInput } from "../shared/types";
 import type { BatchQueue } from "./queue/runner";
 import { isTargetTooLarge } from "../shared/bitrate";
@@ -25,6 +25,7 @@ export interface MainContext {
   analyzer: QualityAnalyzer;
   updates: UpdateChecker;
   getCaps: () => Promise<EncoderCaps>;
+  getQueueConcurrency: () => Promise<QueueConcurrencyInfo>;
   getFfmpeg: () => Promise<{ ffmpeg: string; ffprobe: string }>;
   queue: BatchQueue;
   preview: OutputPreviewGate;
@@ -276,6 +277,8 @@ export function registerIpc(ctx: MainContext): void {
   });
 
   ipcMain.handle("get-encoder-caps", async () => ctx.getCaps());
+
+  ipcMain.handle("get-queue-concurrency", async () => ctx.getQueueConcurrency());
 }
 
 export function isCompressing(job: CompressJob): boolean {

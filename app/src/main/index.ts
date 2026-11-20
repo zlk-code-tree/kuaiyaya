@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, shell } from "electron";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { APP_NAME, MSG } from "../shared/messages";
+import type { QueueConcurrencyInfo } from "../shared/queue";
 import type { EncoderCaps } from "../shared/types";
 import { resolveBinaries } from "./ffmpeg/binary";
 import { detectCaps } from "./ffmpeg/detect";
@@ -13,6 +14,7 @@ import { LicenseSession } from "./license/session";
 import { registerIpc } from "./ipc";
 import { installMediaHandler, OutputPreviewGate, registerMediaScheme } from "./media-protocol";
 import { loadConfig, type AppConfig } from "./paths";
+import { queueConcurrency, readChipFacts } from "./queue/concurrency";
 import { prepareQueueItem } from "./queue/prepare";
 import { BatchQueue } from "./queue/runner";
 
@@ -30,12 +32,19 @@ const preview = new OutputPreviewGate();
 const job = new CompressJob();
 const analyzer = new QualityAnalyzer();
 let queue: BatchQueue | null = null;
+interface QueueJobGate {
+  cancelled: boolean;
+  job: CompressJob | null;
+}
+/** 队列里每条正在跑的任务各用自己的 CompressJob。单文件仍只用上面的 job。 */
+const queueJobs = new Map<string, QueueJobGate>();
 let queueClosePrompt: Promise<boolean> | null = null;
 let queueCloseConfirmed = false;
 const secrets = process.platform === "darwin" ? new KeychainStore() : process.platform === "win32" ? new WindowsSecretStore() : new MemorySecretStore();
 let session: LicenseSession;
 let capsPromise: Promise<EncoderCaps> | null = null;
 let binsPromise: Promise<{ ffmpeg: string; ffprobe: string }> | null = null;
+let concurrencyPromise: Promise<QueueConcurrencyInfo> | null = null;
 
 function getBins() {
   if (!binsPromise) {
@@ -49,6 +58,29 @@ function getCaps() {
     capsPromise = getBins().then((b) => detectCaps(b.ffmpeg));
   }
   return capsPromise;
+}
+
+function getQueueConcurrency(): Promise<QueueConcurrencyInfo> {
+  if (!concurrencyPromise) concurrencyPromise = resolveQueueConcurrency();
+  return concurrencyPromise;
+}
+
+async function resolveQueueConcurrency(): Promise<QueueConcurrencyInfo> {
+  try {
+    const [caps, chip] = await Promise.all([getCaps(), readChipFacts()]);
+    return {
+      limit: queueConcurrency({
+        platform: process.platform,
+        videotoolbox: caps.videotoolbox,
+        brand: chip.brand,
+        totalMemBytes: chip.totalMemBytes,
+        perfCores: chip.perfCores,
+      }),
+      source: "auto",
+    };
+  } catch {
+    return { limit: 1, source: "auto" };
+  }
 }
 
 function askStopQueue(win: BrowserWindow): Promise<boolean> {
@@ -163,22 +195,40 @@ app.whenReady().then(async () => {
     decideStart: () => session.decideStart(),
     prepare: (item) => prepareQueueItem(getBins, item),
     runJob: async (item, info, hooks) => {
-      const bins = await getBins();
-      const caps = await getCaps();
-      await job.run({
-        ffmpegPath: bins.ffmpeg,
-        probe: info,
-        targetMB: item.targetMB,
-        caps,
-        hooks: {
-          exists: (filePath) => existsSync(filePath),
-          onProgress: hooks.onProgress,
-          onDone: hooks.onDone,
-          onFail: hooks.onFail,
-        },
-      });
+      const gate: QueueJobGate = { cancelled: false, job: null };
+      queueJobs.set(item.id, gate);
+      try {
+        const bins = await getBins();
+        const caps = await getCaps();
+        if (gate.cancelled) {
+          hooks.onFail({ message: MSG.cancelled, cancelled: true });
+          return;
+        }
+        const itemJob = new CompressJob();
+        gate.job = itemJob;
+        await itemJob.run({
+          ffmpegPath: bins.ffmpeg,
+          probe: info,
+          targetMB: item.targetMB,
+          caps: { ...caps },
+          hooks: {
+            exists: (filePath) => existsSync(filePath),
+            onProgress: hooks.onProgress,
+            onDone: hooks.onDone,
+            onFail: hooks.onFail,
+          },
+        });
+      } finally {
+        if (queueJobs.get(item.id) === gate) queueJobs.delete(item.id);
+      }
     },
-    cancelJob: () => job.cancel(),
+    cancelJob: async (itemId) => {
+      const gate = queueJobs.get(itemId);
+      if (!gate) return;
+      gate.cancelled = true;
+      if (gate.job) await gate.job.cancel();
+    },
+    concurrencyLimit: async () => (await getQueueConcurrency()).limit,
     onUpdate: (snapshot) => {
       const win = mainWindow;
       if (!win || win.isDestroyed()) return;
@@ -193,6 +243,7 @@ app.whenReady().then(async () => {
     analyzer,
     updates,
     getCaps,
+    getQueueConcurrency,
     getFfmpeg: getBins,
     queue,
     preview,
@@ -200,6 +251,7 @@ app.whenReady().then(async () => {
   createWindow();
   void session.boot();
   void getCaps();
+  void getQueueConcurrency();
 });
 
 app.on("window-all-closed", () => {

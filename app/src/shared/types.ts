@@ -1,4 +1,4 @@
-import type { QueueRetryRequest, QueueSnapshot, QueueStartRequest, QueueStartResult } from "./queue";
+import type { QueueConcurrencyInfo, QueueRetryRequest, QueueSnapshot, QueueStartRequest, QueueStartResult } from "./queue";
 
 export type AppScreen =
   | "screen-key"
@@ -151,6 +151,7 @@ export interface KuaiyayaAPI {
   queueCancelItem(id: string): Promise<void>;
   queueCancelAll(): Promise<void>;
   queueRetry(input: QueueRetryRequest): Promise<void>;
+  getQueueConcurrency(): Promise<QueueConcurrencyInfo>;
   onQueueUpdate(cb: (snapshot: QueueSnapshot) => void): () => void;
   probe(filePath: string): Promise<ProbeInfo>;
   checkStartGuards(input: StartInput): Promise<GuardResult>;

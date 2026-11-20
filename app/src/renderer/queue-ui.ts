@@ -1,5 +1,5 @@
 import { MSG } from "../shared/messages";
-import { carriedCapMB, itemTargetMB, queueStartAllowed, queueSummaryLine, queueTargetTextFromReady, readSharedTarget, targetSkipsItem, type QueueItemSnapshot, type QueueSnapshot, type QueueStartItem } from "../shared/queue";
+import { carriedCapMB, countCompressibleDrafts, displayedQueueSlots, itemTargetMB, normalizeDeviceLimit, queueConcurrencyLine, queueStartAllowed, queueStartDisabled, queueSummaryLine, queueTargetTextFromReady, readSharedTarget, resolveQueueLead, targetSkipsItem, type QueueItemSnapshot, type QueueSnapshot, type QueueStartItem } from "../shared/queue";
 import type { AppScreen, LicenseState, ProbeInfo, ProgressEvent } from "../shared/types";
 import { isLikelyVideoPath } from "../shared/video-ext";
 import { doneSubtitle } from "./done-sub";
@@ -20,7 +20,7 @@ export interface QueueController {
 }
 
 interface QueueDeps {
-  api: Pick<Window["kuaiyaya"], "probe" | "selectVideo" | "queueStart" | "queueCancelItem" | "queueCancelAll" | "queueRetry" | "onQueueUpdate" | "openFile" | "revealInFinder">;
+  api: Pick<Window["kuaiyaya"], "probe" | "selectVideo" | "queueStart" | "queueCancelItem" | "queueCancelAll" | "queueRetry" | "getQueueConcurrency" | "onQueueUpdate" | "openFile" | "revealInFinder">;
   getScreen: () => AppScreen;
   setScreen: (id: AppScreen) => void;
   currentProbe: () => ProbeInfo | null;
@@ -64,9 +64,16 @@ export function createQueueController(deps: QueueDeps): QueueController {
   let drafts: Draft[] = [];
   let started = false;
   let waitingKey = false;
+  let arming = false;
   let live: QueueSnapshot | null = null;
   let seq = 0;
   let ingestGen = 0;
+  /** 叠在一起的导入次数。后一次还在读时，前一次结束也不能把开始按钮放开。 */
+  let ingestDepth = 0;
+  let deviceLimit: number | null = null;
+  let frozenLine: string | null = null;
+  let loadingConcurrency = false;
+  let seenRunning = new Set<string>();
 
   function nextId(): string {
     seq += 1;
@@ -74,7 +81,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
   }
 
   function isRunning(): boolean {
-    if (waitingKey) return true;
+    if (waitingKey || arming) return true;
     if (live?.phase === "running") return true;
     return started && live == null;
   }
@@ -114,82 +121,94 @@ export function createQueueController(deps: QueueDeps): QueueController {
     return [];
   }
 
+  function ingesting(): boolean {
+    return ingestDepth > 0;
+  }
+
   async function ingest(paths: string[], mode: "add" | "replace"): Promise<void> {
-    if (deps.isSingleBusy()) return;
-    if (!deps.hasLicense()) {
-      deps.setScreen("screen-key");
-      return;
-    }
-    if (started || waitingKey) {
-      toast(live?.phase === "done" ? "这批已结束，返回后可以再加入视频。" : "已经开始，不能再加入文件");
-      return;
-    }
-    const gen = ++ingestGen;
-    let ignored = 0;
-    let duplicated = 0;
-    const known = new Set(currentBase(mode).map((item) => item.filePath));
-    const fresh: string[] = [];
-    for (const filePath of paths) {
-      if (!filePath) continue;
-      if (!isLikelyVideoPath(filePath)) {
-        ignored += 1;
-        continue;
-      }
-      if (known.has(filePath)) {
-        duplicated += 1;
-        continue;
-      }
-      known.add(filePath);
-      fresh.push(filePath);
-    }
-    const notes: string[] = [];
-    if (ignored > 0) notes.push(`已忽略 ${ignored} 个非视频文件`);
-    if (duplicated > 0) notes.push("同一视频已在列表中，未重复加入");
-    if (notes.length > 0) toast(notes.join("，"));
-
-    const added: Draft[] = [];
-    for (const filePath of fresh) {
-      if (gen !== ingestGen || started) return;
-      try {
-        const info = await deps.api.probe(filePath);
-        if (gen !== ingestGen || started) return;
-        added.push({ id: nextId(), filePath: info.path, probe: info, error: null });
-      } catch (err) {
-        if (gen !== ingestGen || started) return;
-        added.push({ id: nextId(), filePath, probe: null, error: cleanError(err) });
-      }
-    }
-    if (gen !== ingestGen || started || waitingKey) return;
-
-    const base = currentBase(mode);
-    const have = new Set(base.map((item) => item.filePath));
-    const next = base.concat(added.filter((item) => !have.has(item.filePath)));
-    if (next.length === 0) return;
-    if (next.length === 1) {
-      const only = next[0];
-      if (!only) return;
-      if (only.probe) {
-        if (deps.getScreen() === "screen-ready" && deps.currentProbe()?.path === only.filePath) return;
-        openSingle(only.probe);
+    ingestDepth += 1;
+    try {
+      syncChrome();
+      if (deps.isSingleBusy()) return;
+      if (!deps.hasLicense()) {
+        deps.setScreen("screen-key");
         return;
       }
-      deps.showAlert("无法打开文件", only.error ?? MSG.queueUnreadable);
-      if (deps.getScreen() === "screen-queue") {
-        drafts = [];
-        clearTargetField();
-        deps.goIdle();
+      if (started || waitingKey || arming) {
+        toast(live?.phase === "done" ? "这批已结束，返回后可以再加入视频。" : "已经开始，不能再加入文件");
+        return;
       }
-      return;
+      const gen = ++ingestGen;
+      let ignored = 0;
+      let duplicated = 0;
+      const known = new Set(currentBase(mode).map((item) => item.filePath));
+      const fresh: string[] = [];
+      for (const filePath of paths) {
+        if (!filePath) continue;
+        if (!isLikelyVideoPath(filePath)) {
+          ignored += 1;
+          continue;
+        }
+        if (known.has(filePath)) {
+          duplicated += 1;
+          continue;
+        }
+        known.add(filePath);
+        fresh.push(filePath);
+      }
+      const notes: string[] = [];
+      if (ignored > 0) notes.push(`已忽略 ${ignored} 个非视频文件`);
+      if (duplicated > 0) notes.push("同一视频已在列表中，未重复加入");
+      if (notes.length > 0) toast(notes.join("，"));
+
+      const added: Draft[] = [];
+      for (const filePath of fresh) {
+        if (gen !== ingestGen || started) return;
+        try {
+          const info = await deps.api.probe(filePath);
+          if (gen !== ingestGen || started) return;
+          added.push({ id: nextId(), filePath: info.path, probe: info, error: null });
+        } catch (err) {
+          if (gen !== ingestGen || started) return;
+          added.push({ id: nextId(), filePath, probe: null, error: cleanError(err) });
+        }
+      }
+      if (gen !== ingestGen || started || waitingKey || arming) return;
+
+      const base = currentBase(mode);
+      const have = new Set(base.map((item) => item.filePath));
+      const next = base.concat(added.filter((item) => !have.has(item.filePath)));
+      if (next.length === 0) return;
+      if (next.length === 1) {
+        const only = next[0];
+        if (!only) return;
+        if (only.probe) {
+          if (deps.getScreen() === "screen-ready" && deps.currentProbe()?.path === only.filePath) return;
+          openSingle(only.probe);
+          return;
+        }
+        deps.showAlert("无法打开文件", only.error ?? MSG.queueUnreadable);
+        if (deps.getScreen() === "screen-queue") {
+          drafts = [];
+          clearTargetField();
+          deps.goIdle();
+        }
+        return;
+      }
+      const entering = deps.getScreen() !== "screen-queue";
+      const fromReady = deps.getScreen() === "screen-ready";
+      drafts = next;
+      live = null;
+      if (entering) {
+        setQueueTargetText(fromReady ? queueTargetTextFromReady(deps.currentReadyCap()) : "");
+      }
+      deps.setScreen("screen-queue");
+      requestConcurrency();
+      render();
+    } finally {
+      ingestDepth -= 1;
+      syncChrome();
     }
-    const entering = deps.getScreen() !== "screen-queue";
-    const fromReady = deps.getScreen() === "screen-ready";
-    drafts = next;
-    live = null;
-    if (entering) {
-      setQueueTargetText(fromReady ? queueTargetTextFromReady(deps.currentReadyCap()) : "");
-    }
-    deps.setScreen("screen-queue");
-    render();
   }
 
   function leave(): void {
@@ -198,13 +217,38 @@ export function createQueueController(deps: QueueDeps): QueueController {
     live = null;
     started = false;
     waitingKey = false;
+    frozenLine = null;
+    seenRunning = new Set();
     clearTargetField();
     deps.goIdle();
     deps.onActivity();
   }
 
+  function compressibleCount(): number {
+    return countCompressibleDrafts(drafts.map((item) => ({
+      probe: item.probe,
+      skipped: draftSkipped(item),
+    })));
+  }
+
+  function renderLead(): void {
+    $("queueLead").textContent = resolveQueueLead(deviceLimit, compressibleCount(), frozenLine);
+  }
+
+  function requestConcurrency(): void {
+    if (deviceLimit != null || loadingConcurrency) return;
+    loadingConcurrency = true;
+    void deps.api.getQueueConcurrency().then((info) => {
+      deviceLimit = normalizeDeviceLimit(info.limit);
+      loadingConcurrency = false;
+      if (frozenLine == null && deps.getScreen() === "screen-queue") render();
+    }).catch(() => {
+      loadingConcurrency = false;
+    });
+  }
+
   function removeDraft(id: string): void {
-    if (started || waitingKey) return;
+    if (started || waitingKey || arming) return;
     drafts = drafts.filter((item) => item.id !== id);
     if (drafts.length === 1 && drafts[0]?.probe) {
       const info = drafts[0].probe;
@@ -236,7 +280,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
   function syncStartButton(): void {
     const button = $("queueStart") as HTMLButtonElement;
     const read = readSharedTarget(targetField().value);
-    if (waitingKey) {
+    if (waitingKey || arming) {
       button.disabled = true;
       button.classList.add("waiting");
       button.innerHTML = '<span class="spinner"></span>请稍候…';
@@ -244,7 +288,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
     }
     button.classList.remove("waiting");
     button.textContent = "开始压缩";
-    button.disabled = started || !queueStartAllowed(read);
+    button.disabled = queueStartDisabled({ started, ingesting: ingesting(), target: read });
   }
 
   function renderHint(): void {
@@ -281,14 +325,15 @@ export function createQueueController(deps: QueueDeps): QueueController {
     const running = isRunning();
     const failed = live?.summary?.failed ?? 0;
     $("queueStart").classList.toggle("hidden", started);
-    $("queueAdd").classList.toggle("hidden", started || waitingKey);
+    $("queueAdd").classList.toggle("hidden", started || waitingKey || arming);
     $("queueCancelAll").classList.toggle("hidden", live?.phase !== "running");
     $("queueRetryFailed").classList.toggle("hidden", !(started && live?.phase === "done" && failed > 0));
     $("queueBack").classList.toggle("hidden", running);
-    targetField().disabled = started || waitingKey;
+    targetField().disabled = started || waitingKey || arming;
     syncStartButton();
     renderHint();
     renderSummary();
+    renderLead();
     deps.onActivity();
   }
 
@@ -368,6 +413,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
   function renderLiveRow(item: QueueItemSnapshot): HTMLElement {
     const row = document.createElement("div");
     row.className = "queue-row";
+    row.dataset.queueId = item.id;
     const top = document.createElement("div");
     top.className = "queue-row-top";
     const meta = document.createElement("div");
@@ -413,7 +459,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
       addButton(actions, "取消", () => void deps.api.queueCancelItem(item.id));
     } else if (item.status === "running") {
       addButton(actions, "取消", () => {
-        deps.askConfirm(MSG.closeWhileWorkTitle, MSG.closeWhileWork, "确定取消", () => {
+        deps.askConfirm(MSG.closeWhileWorkTitle, MSG.queueCancelOneDetail, "确定取消", () => {
           void deps.api.queueCancelItem(item.id);
         });
       });
@@ -432,13 +478,32 @@ export function createQueueController(deps: QueueDeps): QueueController {
     return row;
   }
 
+  function revealNewestRunning(list: HTMLElement, runningIds: string[]): void {
+    const fresh = runningIds.filter((id) => !seenRunning.has(id));
+    seenRunning = new Set(runningIds);
+    const newest = fresh.at(-1);
+    if (!newest) return;
+    const rows = list.querySelectorAll<HTMLElement>("[data-queue-id]");
+    for (const row of rows) {
+      if (row.dataset.queueId !== newest) continue;
+      row.scrollIntoView({ block: "nearest" });
+      return;
+    }
+  }
+
   function render(): void {
     const list = $("queueList");
+    const scrollTop = list.scrollTop;
     list.replaceChildren();
     if (started && live) {
       for (const item of live.items) list.append(renderLiveRow(item));
+      const runningIds = live.items.filter((item) => item.status === "running").map((item) => item.id);
+      list.scrollTop = scrollTop;
+      revealNewestRunning(list, runningIds);
     } else {
+      seenRunning = new Set();
       for (const item of drafts) list.append(renderDraftRow(item));
+      list.scrollTop = scrollTop;
     }
     syncChrome();
   }
@@ -458,21 +523,30 @@ export function createQueueController(deps: QueueDeps): QueueController {
   }
 
   async function onStart(): Promise<void> {
-    if (started || waitingKey || deps.isSingleBusy()) return;
+    if (started || waitingKey || arming || ingesting() || deps.isSingleBusy()) return;
     const read = readSharedTarget(targetField().value);
     if (!queueStartAllowed(read)) return;
     const items = payload();
-    const state = await deps.license();
-    if (!state.hasStoredKey) {
-      deps.showAlert("尚未开通", "输入有效 Key 后才能开始压缩。不需要注册或登录。");
-      return;
-    }
-    waitingKey = !state.verified;
+    arming = true;
     syncChrome();
     try {
+      const state = await deps.license();
+      if (!state.hasStoredKey) {
+        deps.showAlert("尚未开通", "输入有效 Key 后才能开始压缩。不需要注册或登录。");
+        return;
+      }
+      waitingKey = !state.verified;
+      syncChrome();
+      if (deviceLimit == null) {
+        const info = await deps.api.getQueueConcurrency();
+        deviceLimit = normalizeDeviceLimit(info.limit);
+      }
+      frozenLine = queueConcurrencyLine(displayedQueueSlots(deviceLimit, compressibleCount()));
+      renderLead();
       const result = await deps.api.queueStart({ items });
       if (!result.ok) {
         waitingKey = false;
+        frozenLine = null;
         if (!live) started = false;
         syncChrome();
         if (result.code === "cancelled") return;
@@ -487,17 +561,22 @@ export function createQueueController(deps: QueueDeps): QueueController {
       render();
     } catch (err) {
       waitingKey = false;
+      frozenLine = null;
       if (!live) started = false;
       syncChrome();
       deps.handleStartError(err);
+    } finally {
+      arming = false;
+      if (!started) syncChrome();
     }
   }
 
   function mount(): void {
+    requestConcurrency();
     targetField().addEventListener("input", () => render());
     $("queueStart").addEventListener("click", () => void onStart());
     $("queueAdd").addEventListener("click", () => {
-      if (started || waitingKey || deps.isSingleBusy()) return;
+      if (started || waitingKey || arming || deps.isSingleBusy()) return;
       void deps.api.selectVideo().then((paths) => {
         if (paths.length > 0) return ingest(paths, "add");
         return undefined;
@@ -511,7 +590,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
     });
     $("queueRetryFailed").addEventListener("click", () => void deps.api.queueRetry({ allFailed: true }));
     deps.api.onQueueUpdate((snapshot) => {
-      if (!started && !waitingKey) return;
+      if (!started && !waitingKey && !arming) return;
       live = snapshot;
       if (snapshot.phase === "running" || snapshot.phase === "done") {
         started = true;

@@ -119,6 +119,7 @@
 #screen-queue { min-height: 0; }
 #screen-queue .page-heading { margin-bottom: 8px; flex-shrink: 0; }
 #screen-queue .page-heading h2 { font-size: 20px; }
+#screen-queue .page-heading p { max-width: 460px; line-height: 1.45; }
 #screen-queue .queue-target-panel { margin-top: 0; flex-shrink: 0; padding: 12px 14px 10px; }
 #screen-queue .queue-mb { margin-top: 10px; max-width: 320px; }
 #screen-queue .queue-mb input { width: 220px; text-align: left; font-weight: 500; }

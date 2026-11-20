@@ -14,6 +14,7 @@ const api: KuaiyayaAPI = {
   queueCancelItem: (id: string) => ipcRenderer.invoke("queue-cancel-item", id),
   queueCancelAll: () => ipcRenderer.invoke("queue-cancel-all"),
   queueRetry: (input: QueueRetryRequest) => ipcRenderer.invoke("queue-retry", input),
+  getQueueConcurrency: () => ipcRenderer.invoke("get-queue-concurrency"),
   onQueueUpdate: (cb) => on<QueueSnapshot>("queue-update", cb),
   probe: (filePath) => ipcRenderer.invoke("probe", filePath),
   checkStartGuards: (input) => ipcRenderer.invoke("check-start-guards", input),
