@@ -1,18 +1,22 @@
-import { access, constants, statfs } from "node:fs/promises";
+import { access, constants, stat, statfs } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { GuardResult, ProbeInfo } from "../../shared/types";
 import { isTargetTooLarge, requiredDiskBytes } from "../../shared/bitrate";
 import { MSG } from "../../shared/messages";
 
-export async function checkGuards(probe: ProbeInfo, targetMB: number | null): Promise<GuardResult> {
+export async function checkGuards(probe: ProbeInfo, targetMB: number | null, outputDirectory?: string | null): Promise<GuardResult> {
   if (targetMB != null && isTargetTooLarge(targetMB, probe.sizeBytes)) {
     return { ok: false, reason: "target_too_large", message: MSG.targetTooLarge };
   }
-  const dir = dirname(probe.path);
+  const custom = typeof outputDirectory === "string" && outputDirectory.trim() !== "";
+  const dir = custom ? outputDirectory.trim() : dirname(probe.path);
+  const denied = custom ? MSG.noWriteCustom : MSG.noWrite;
   try {
+    const info = await stat(dir);
+    if (!info.isDirectory()) return { ok: false, reason: "no_write", message: denied };
     await access(dir, constants.W_OK);
   } catch {
-    return { ok: false, reason: "no_write", message: MSG.noWrite };
+    return { ok: false, reason: "no_write", message: denied };
   }
   const need = requiredDiskBytes(targetMB, probe.sizeBytes);
   try {

@@ -9,7 +9,7 @@ import type { PrepareResult } from "./runner";
 
 export async function prepareQueueItem(
   ffmpeg: () => Promise<{ ffmpeg: string; ffprobe: string }>,
-  item: { filePath: string; targetMB: number | null },
+  item: { filePath: string; targetMB: number | null; outputDirectory?: string | null },
 ): Promise<PrepareResult> {
   if (!isLikelyVideoPath(item.filePath) || !existsSync(item.filePath)) {
     return { ok: false, status: "failed", message: MSG.queueUnreadable };
@@ -22,7 +22,7 @@ export async function prepareQueueItem(
       return { ok: false, status: "failed", message: "视频文件已发生变化，请重新选择。" };
     }
     if (item.targetMB == null || !isTargetTooLarge(item.targetMB, info.sizeBytes)) {
-      const guard = await checkGuards(info, item.targetMB);
+      const guard = await checkGuards(info, item.targetMB, item.outputDirectory);
       if (!guard.ok && guard.reason !== "target_too_large") {
         return { ok: false, status: "failed", message: guard.message ?? MSG.encodeFail };
       }

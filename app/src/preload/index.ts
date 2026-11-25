@@ -10,6 +10,7 @@ function on<T>(channel: string, cb: (e: T) => void): () => void {
 
 const api: KuaiyayaAPI = {
   selectVideo: () => ipcRenderer.invoke("select-video"),
+  selectOutputDirectory: () => ipcRenderer.invoke("select-output-directory"),
   queueStart: (input: QueueStartRequest) => ipcRenderer.invoke("queue-start", input),
   queueCancelItem: (id: string) => ipcRenderer.invoke("queue-cancel-item", id),
   queueCancelAll: () => ipcRenderer.invoke("queue-cancel-all"),

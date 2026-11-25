@@ -194,7 +194,7 @@ app.whenReady().then(async () => {
   queue = new BatchQueue({
     decideStart: () => session.decideStart(),
     prepare: (item) => prepareQueueItem(getBins, item),
-    runJob: async (item, info, hooks) => {
+    runJob: async (item, info, hooks, output) => {
       const gate: QueueJobGate = { cancelled: false, job: null };
       queueJobs.set(item.id, gate);
       try {
@@ -210,6 +210,7 @@ app.whenReady().then(async () => {
           ffmpegPath: bins.ffmpeg,
           probe: info,
           targetMB: item.targetMB,
+          output,
           caps: { ...caps },
           hooks: {
             exists: (filePath) => existsSync(filePath),

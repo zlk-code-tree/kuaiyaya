@@ -83,9 +83,29 @@
             <input type="range" id="sizeSlider" class="is-unset" aria-label="上限大小，留空时停用" aria-valuetext="未填写" min="1" max="100" disabled />
             <label class="mb-field"><input type="number" id="sizeInput" aria-label="压到多大，MB，留空则按清晰度自动压" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="没填则按清晰度自动压到尽量小" /><span>MB</span></label>
           </div>
+          <div class="preset-row" role="group" aria-label="常用上限">
+            <span class="preset-kicker">常用</span>
+            <button class="preset-btn" id="readyPreset10" type="button" aria-pressed="false">10 MB</button>
+            <button class="preset-btn" id="readyPreset25" type="button" aria-pressed="false">25 MB</button>
+          </div>
           <div class="hint" id="targetHint">没填时，按清晰度估算这支视频在保证画质下能压到多小，再按这个结果压。1080p 及以下不缩小，更高分辨率长边不超过 1920。</div>
           <div class="analysis-summary hidden" id="analysisSummary" aria-live="polite"></div>
           <div class="banner hidden" id="targetBanner">原片已经不大于目标大小，无需压缩。请调低目标后再开始。</div>
+          <div class="output-block">
+            <div class="output-line">
+              <div class="output-copy">
+                <div class="panel-label">保存到</div>
+                <div class="panel-caption output-dir" id="outputDirLabel">与原片同一目录</div>
+              </div>
+              <button class="linkish" id="outputDirBtn" type="button">更改</button>
+              <button class="linkish hidden" id="outputDirReset" type="button">恢复默认</button>
+            </div>
+            <label class="pattern-field">
+              <span>文件名</span>
+              <input id="outputPattern" type="text" spellcheck="false" autocomplete="off" placeholder="{originalStem}_1080p.mp4" aria-label="输出文件名式样，留空则按清晰度命名" />
+            </label>
+            <div class="hint" id="outputPatternHint">留空按清晰度命名（1080p 为原名_1080p.mp4）。{originalStem} 会换成原文件名。同名自动加 (2)、(3)，不覆盖。</div>
+          </div>
           <div class="out-rule" id="outRule">输出 HEVC（H.265）mp4，大尺寸视频会按比例缩小，不放大。默认与原片保存在同一目录。</div>
         </div>
         <div class="quality-callout">
@@ -115,11 +135,31 @@
             </div>
             <span class="target-unit">MB</span>
           </div>
+          <div class="preset-row" role="group" aria-label="常用上限">
+            <span class="preset-kicker">常用</span>
+            <button class="preset-btn" id="queuePreset10" type="button" aria-pressed="false">10 MB</button>
+            <button class="preset-btn" id="queuePreset25" type="button" aria-pressed="false">25 MB</button>
+          </div>
           <label class="mb-field queue-mb">
             <input type="number" id="queueTarget" min="1" step="1" inputmode="numeric" autocomplete="off" placeholder="没填则各按清晰度自动压到尽量小" aria-label="批量上限，留空则各按清晰度自动压" />
             <span>MB</span>
           </label>
           <div class="hint" id="queueTargetHint">留空时，每支按清晰度优先估算能压到多小，再按这个结果压。</div>
+          <div class="output-block">
+            <div class="output-line">
+              <div class="output-copy">
+                <div class="panel-label">保存到</div>
+                <div class="panel-caption output-dir" id="queueOutputDirLabel">与原片同一目录</div>
+              </div>
+              <button class="linkish" id="queueOutputDirBtn" type="button">更改</button>
+              <button class="linkish hidden" id="queueOutputDirReset" type="button">恢复默认</button>
+            </div>
+            <label class="pattern-field">
+              <span>文件名</span>
+              <input id="queueOutputPattern" type="text" spellcheck="false" autocomplete="off" placeholder="{originalStem}_1080p.mp4" aria-label="输出文件名式样，留空则按清晰度命名" />
+            </label>
+            <div class="hint" id="queueOutputHint">留空按清晰度命名（1080p 为原名_1080p.mp4）。{originalStem} 会换成原文件名。同名自动加 (2)、(3)，不覆盖。</div>
+          </div>
         </div>
         <div class="queue-list" id="queueList"></div>
         <div class="actions">

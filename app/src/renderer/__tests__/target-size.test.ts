@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultTargetMB } from "../../shared/bitrate";
 import { carriedCapMB, queueTargetTextFromReady, readSharedTarget } from "../../shared/queue";
-import { applySlider, applyTyped, fromFileSize, sliderThumbMB, tooLarge } from "../state/target-size";
+import { SIZE_PRESETS_MB, applySlider, applyTyped, fromFileSize, sliderThumbMB, tooLarge } from "../state/target-size";
 
 describe("ready page target", () => {
   it("starts empty and does not prefill half of the source", () => {
@@ -44,6 +44,22 @@ describe("ready page target", () => {
     expect(applyTyped(fromFileSize(size), "abc").invalid).toBe(true);
     expect(applyTyped(fromFileSize(size), "abc").targetMB).toBeNull();
     expect(applySlider(fromFileSize(size), 24).targetMB).toBe(24);
+  });
+
+  it("fills 10 MB or 25 MB from a preset and still clears back to quality-first", () => {
+    expect(SIZE_PRESETS_MB).toEqual([10, 25]);
+    const size = 100 * 1024 * 1024;
+    const ten = applyTyped(fromFileSize(size), String(SIZE_PRESETS_MB[0]));
+    expect(ten.targetMB).toBe(10);
+    expect(ten.invalid).toBe(false);
+    const tweaked = applyTyped(ten, "18");
+    expect(tweaked.targetMB).toBe(18);
+    const twentyFive = applyTyped(tweaked, String(SIZE_PRESETS_MB[1]));
+    expect(twentyFive.targetMB).toBe(25);
+    const cleared = applyTyped(twentyFive, "");
+    expect(cleared.targetMB).toBeNull();
+    expect(cleared.invalid).toBe(false);
+    expect(tooLarge(cleared)).toBe(false);
   });
 
   it("blocks only a filled cap that is not smaller than the source", () => {
