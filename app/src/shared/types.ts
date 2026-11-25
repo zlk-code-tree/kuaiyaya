@@ -26,10 +26,19 @@ export interface ProbeInfo {
   container: string;
 }
 
+/** 没改时 directory 与 pattern 都是 null：跟原片同目录，按清晰度命名。 */
+export interface OutputPlan {
+  /** null：与原片同一目录。 */
+  directory: string | null;
+  /** null：按清晰度命名。有值则按式样命名，{originalStem} 换成原文件名。 */
+  pattern: string | null;
+}
+
 export interface StartInput {
   filePath: string;
   /** null：没填，只走清晰度优先。正整数：必须压进的上限。 */
   targetMB: number | null;
+  output?: OutputPlan;
 }
 
 export type QualityMetric = "vmaf" | "ssim";
@@ -147,6 +156,7 @@ export type UpdateCheckResult =
 
 export interface KuaiyayaAPI {
   selectVideo(): Promise<string[]>;
+  selectOutputDirectory(): Promise<string | null>;
   queueStart(input: QueueStartRequest): Promise<QueueStartResult>;
   queueCancelItem(id: string): Promise<void>;
   queueCancelAll(): Promise<void>;

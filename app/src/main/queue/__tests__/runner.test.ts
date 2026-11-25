@@ -584,9 +584,9 @@ describe("batch queue concurrency", () => {
       concurrencyLimit,
       cancelJob: async () => undefined,
       prepare: async (item) => ({ ok: true, probe: probe(item.id, 80) }),
-      runJob: async (item, info, hooks) => {
+      runJob: async (item, info, hooks, output) => {
         if (item.id === "a") hardware = false;
-        await jobs.runJob(item, info, hooks);
+        await jobs.runJob(item, info, hooks, output);
       },
     });
     await queue.start([source("a", 80, 40), source("b", 80, 40), source("c", 80, 40)]);
@@ -641,6 +641,30 @@ describe("batch queue concurrency", () => {
     (await jobs.gate("b")).finish("done");
     await queue.whenSettled();
     expect(queue.snapshot().items.map((item) => item.status)).toEqual(["success", "success"]);
+  });
+
+  it("passes the chosen folder and pattern into prepare and the job, including a retry", async () => {
+    const seen: Array<{ where: string; directory: string | null; pattern: string | null }> = [];
+    let failOnce = true;
+    const { queue } = harness(async (_item, _probe, hooks, output) => {
+      seen.push({ where: "job", directory: output.directory, pattern: output.pattern });
+      if (failOnce) {
+        failOnce = false;
+        hooks.onFail({ message: "失败" });
+        return;
+      }
+      hooks.onDone(done("a"));
+    }, async (item) => {
+      seen.push({ where: "prepare", directory: item.outputDirectory ?? null, pattern: null });
+      return { ok: true, probe: probe(item.id, 80) };
+    });
+    await queue.start([source("a", 80, null)], { directory: "/out", pattern: "{originalStem}_a.mp4" });
+    await queue.whenSettled();
+    queue.retryItem("a");
+    await queue.whenSettled();
+    expect(seen.map((item) => item.directory)).toEqual(["/out", "/out", "/out", "/out"]);
+    expect(seen.filter((item) => item.where === "job").every((item) => item.pattern === "{originalStem}_a.mp4")).toBe(true);
+    expect(queue.snapshot().items[0]?.status).toBe("success");
   });
 
   it("uses the serial sentence when the displayed slot count is 1", () => {

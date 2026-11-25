@@ -1,18 +1,26 @@
-import { basename, dirname, extname, join } from "node:path";
-import { suggestedOutputName, outputTag } from "./filename";
+import { basename, dirname, join } from "node:path";
+import { plannedOutputName, suffixedFileName, suggestedOutputName, outputTag } from "./filename";
 import type { Size } from "./scale";
+import type { OutputPlan } from "./types";
 
 export { suggestedOutputName, outputTag };
 
-export function allocateOutputPath(inputPath: string, exists: (p: string) => boolean, size?: Size): string {
-  const dir = dirname(inputPath);
-  const first = join(dir, suggestedOutputName(inputPath, size));
-  if (!exists(first)) return first;
-  const stem = basename(inputPath, extname(inputPath));
-  const tag = outputTag(size);
-  for (let i = 2; i < 1000; i++) {
-    const candidate = join(dir, `${stem}_${tag} (${i}).mp4`);
-    if (!exists(candidate)) return candidate;
+export function allocateOutputPath(
+  inputPath: string,
+  exists: (p: string) => boolean,
+  size?: Size,
+  output?: Pick<OutputPlan, "directory" | "pattern"> | null,
+  held?: Set<string>,
+): string {
+  const dir = output?.directory?.trim() ? output.directory.trim() : dirname(inputPath);
+  const fileName = plannedOutputName(inputPath, size, output?.pattern);
+  for (let i = 1; i < 1000; i++) {
+    const name = suffixedFileName(fileName, i);
+    const candidate = join(dir, name);
+    if (basename(candidate) !== name) break;
+    if (exists(candidate) || held?.has(candidate)) continue;
+    held?.add(candidate);
+    return candidate;
   }
   throw new Error("无法分配不冲突的输出文件名");
 }

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { rename, stat } from "node:fs/promises";
-import type { DoneEvent, EncoderCaps, EncoderKind, FailEvent, ProbeInfo, ProgressEvent } from "../../shared/types";
+import type { DoneEvent, EncoderCaps, EncoderKind, FailEvent, OutputPlan, ProbeInfo, ProgressEvent } from "../../shared/types";
 import { exceedsTarget, retryVideoBitrateBps, targetBytesFromMB } from "../../shared/bitrate";
 import { selectEncoder } from "../../shared/encoder";
 import { MSG } from "../../shared/messages";
@@ -9,6 +9,9 @@ import { displaySize, fitOutput, outputLabel } from "../../shared/scale";
 import { buildCommands, type CommandPlan } from "./bitrate-cmd";
 import { removeTempFiles } from "./cleanup";
 import { etaSeconds, parseProgressLine, ratioFromOutTime } from "./progress";
+
+/** 同时开压时，文件还没落地也不能抢同一个输出路径。 */
+const reservedOutputs = new Set<string>();
 
 export interface JobHooks {
   onProgress: (e: ProgressEvent) => void;
@@ -22,6 +25,7 @@ export interface JobRequest {
   probe: ProbeInfo;
   /** null：只走清晰度优先。正整数：上限，先清晰度优先，超了再按码率收。 */
   targetMB: number | null;
+  output?: OutputPlan | null;
   caps: EncoderCaps;
   preferredEncoder?: EncoderKind;
   hooks: JobHooks;
@@ -85,7 +89,14 @@ export class CompressJob {
     this.startedAt = Date.now();
     const capBytes = req.targetMB == null ? null : targetBytesFromMB(req.targetMB);
     const outSize = fitOutput(displaySize(req.probe.width, req.probe.height, req.probe.rotation));
-    const outputPath = allocateOutputPath(req.probe.path, req.hooks.exists, outSize);
+    let outputPath: string;
+    try {
+      outputPath = allocateOutputPath(req.probe.path, req.hooks.exists, outSize, req.output, reservedOutputs);
+    } catch {
+      this.running = false;
+      req.hooks.onFail({ message: "无法分配不冲突的输出文件名" });
+      return;
+    }
     const paths: AttemptPaths = {
       outputPath,
       tempOut: partialPath(outputPath),
@@ -152,6 +163,8 @@ export class CompressJob {
           ? "编码器不可用，压缩未能完成。原片没有被修改，临时文件已清理。"
           : MSG.encodeFail,
       });
+    } finally {
+      reservedOutputs.delete(outputPath);
     }
   }
 

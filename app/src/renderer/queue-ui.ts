@@ -1,6 +1,7 @@
 import { MSG } from "../shared/messages";
 import { carriedCapMB, countCompressibleDrafts, displayedQueueSlots, itemTargetMB, normalizeDeviceLimit, queueConcurrencyLine, queueStartAllowed, queueStartDisabled, queueSummaryLine, queueTargetTextFromReady, readSharedTarget, resolveQueueLead, targetSkipsItem, type QueueItemSnapshot, type QueueSnapshot, type QueueStartItem } from "../shared/queue";
-import type { AppScreen, LicenseState, ProbeInfo, ProgressEvent } from "../shared/types";
+import type { AppScreen, LicenseState, OutputPlan, ProbeInfo, ProgressEvent } from "../shared/types";
+import { SIZE_PRESETS_MB } from "./state/target-size";
 import { isLikelyVideoPath } from "../shared/video-ext";
 import { doneSubtitle } from "./done-sub";
 import { $, formatDuration, formatElapsed, formatMB, formatRemainDetail, toast } from "./dom";
@@ -26,6 +27,9 @@ interface QueueDeps {
   currentProbe: () => ProbeInfo | null;
   /** 准备页上已经填好的上限。空着或非法时为 null。 */
   currentReadyCap: () => number | null;
+  currentOutput: () => OutputPlan;
+  outputProblem: () => string | null;
+  syncOutputChrome: (queueLocked?: boolean) => void;
   openSingle: (info: ProbeInfo, carriedMB?: number | null) => void;
   goIdle: () => void;
   hasLicense: () => boolean;
@@ -72,6 +76,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
   let ingestDepth = 0;
   let deviceLimit: number | null = null;
   let frozenLine: string | null = null;
+  let outputBesideSource = true;
   let loadingConcurrency = false;
   let seenRunning = new Set<string>();
 
@@ -288,7 +293,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
     }
     button.classList.remove("waiting");
     button.textContent = "开始压缩";
-    button.disabled = queueStartDisabled({ started, ingesting: ingesting(), target: read });
+    button.disabled = queueStartDisabled({ started, ingesting: ingesting(), target: read }) || deps.outputProblem() != null;
   }
 
   function renderHint(): void {
@@ -330,6 +335,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
     $("queueRetryFailed").classList.toggle("hidden", !(started && live?.phase === "done" && failed > 0));
     $("queueBack").classList.toggle("hidden", running);
     targetField().disabled = started || waitingKey || arming;
+    deps.syncOutputChrome(started || waitingKey || arming);
     syncStartButton();
     renderHint();
     renderSummary();
@@ -445,6 +451,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
         usedAnalysis: false,
         encoder: item.encoder ?? "x265",
         analysisEncoder: null,
+        customDirectory: !outputBesideSource,
       });
       row.append(note);
     } else if (item.message && item.status !== "running") {
@@ -526,6 +533,13 @@ export function createQueueController(deps: QueueDeps): QueueController {
     if (started || waitingKey || arming || ingesting() || deps.isSingleBusy()) return;
     const read = readSharedTarget(targetField().value);
     if (!queueStartAllowed(read)) return;
+    const nameProblem = deps.outputProblem();
+    if (nameProblem) {
+      deps.showAlert("无法开始压缩", nameProblem);
+      return;
+    }
+    const output = deps.currentOutput();
+    outputBesideSource = output.directory == null;
     const items = payload();
     arming = true;
     syncChrome();
@@ -543,7 +557,7 @@ export function createQueueController(deps: QueueDeps): QueueController {
       }
       frozenLine = queueConcurrencyLine(displayedQueueSlots(deviceLimit, compressibleCount()));
       renderLead();
-      const result = await deps.api.queueStart({ items });
+      const result = await deps.api.queueStart({ items, output });
       if (!result.ok) {
         waitingKey = false;
         frozenLine = null;
@@ -574,6 +588,13 @@ export function createQueueController(deps: QueueDeps): QueueController {
   function mount(): void {
     requestConcurrency();
     targetField().addEventListener("input", () => render());
+    for (const mb of SIZE_PRESETS_MB) {
+      $(`queuePreset${mb}`).addEventListener("click", () => {
+        if (started || waitingKey || arming) return;
+        setQueueTargetText(String(mb));
+        render();
+      });
+    }
     $("queueStart").addEventListener("click", () => void onStart());
     $("queueAdd").addEventListener("click", () => {
       if (started || waitingKey || arming || deps.isSingleBusy()) return;

@@ -9,3 +9,12 @@ export async function selectVideo(win: BrowserWindow): Promise<string[]> {
   if (res.canceled || res.filePaths.length === 0) return [];
   return res.filePaths;
 }
+
+export async function selectOutputDirectory(win: BrowserWindow): Promise<string | null> {
+  const res = await dialog.showOpenDialog(win, {
+    title: "选择输出文件夹",
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (res.canceled || res.filePaths.length === 0) return null;
+  return res.filePaths[0] ?? null;
+}

@@ -28,6 +28,7 @@ export const MSG = {
   diskLowPrefix: "开始压缩需要约 ",
   diskLowSuffix: " 的可用空间（含余量）。请清理磁盘后再试。",
   noWrite: "没有权限在原片所在目录写入输出文件。请检查文件夹权限后再试。",
+  noWriteCustom: "没有权限在所选文件夹写入输出文件。请检查文件夹权限后再试。",
   unsupported: "不支持此文件，请选择视频。",
   cancelled: "已取消。未完成的临时文件已清理，原片没有改动。",
   encodeFail: "编码未能完成。原片没有被修改，临时文件已清理。",

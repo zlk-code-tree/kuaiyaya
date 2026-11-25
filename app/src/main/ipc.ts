@@ -1,8 +1,10 @@
 import { BrowserWindow, ipcMain, clipboard, app } from "electron";
 import { readFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import type { QueueConcurrencyInfo, QueueStartItem, QueueStartRequest } from "../shared/queue";
-import type { EncoderCaps, ProbeInfo, QualityAnalysis, StartInput } from "../shared/types";
+import { normalizeOutputPlan, outputPlanProblem } from "../shared/filename";
+import type { EncoderCaps, OutputPlan, ProbeInfo, QualityAnalysis, StartInput } from "../shared/types";
 import type { BatchQueue } from "./queue/runner";
 import { isTargetTooLarge } from "../shared/bitrate";
 import { APP_NAME, FEEDBACK_EMAIL, MAINTAINER, MSG } from "../shared/messages";
@@ -12,7 +14,7 @@ import { CompressJob } from "./ffmpeg/job";
 import { QualityAnalyzer } from "./ffmpeg/quality-analysis";
 import { UpdateChecker } from "./update/checker";
 import { checkGuards } from "./fs/guard";
-import { selectVideo } from "./fs/dialog";
+import { selectOutputDirectory, selectVideo } from "./fs/dialog";
 import { openFile, revealInFinder } from "./fs/open";
 import type { OutputPreviewGate } from "./media-protocol";
 import { qrPath, type AppConfig } from "./paths";
@@ -58,6 +60,22 @@ function readCap(value: unknown): number | null | "bad" {
   return mb;
 }
 
+function readOutput(raw: unknown): OutputPlan {
+  if (!raw || typeof raw !== "object") return { directory: null, pattern: null };
+  const rec = raw as { directory?: unknown; pattern?: unknown };
+  return normalizeOutputPlan({
+    directory: typeof rec.directory === "string" ? rec.directory : null,
+    pattern: typeof rec.pattern === "string" ? rec.pattern : null,
+  });
+}
+
+function validateOutput(plan: OutputPlan): string | null {
+  const problem = outputPlanProblem(plan);
+  if (problem) return problem;
+  if (plan.directory && !isAbsolute(plan.directory)) return "所选文件夹无效。";
+  return null;
+}
+
 function readQueueItems(input: QueueStartRequest | undefined): QueueStartItem[] {
   if (!input || !Array.isArray(input.items)) return [];
   const items: QueueStartItem[] = [];
@@ -90,6 +108,12 @@ export function registerIpc(ctx: MainContext): void {
     return selectVideo(win);
   });
 
+  ipcMain.handle("select-output-directory", async () => {
+    const win = ctx.getWindow();
+    if (!win) return null;
+    return selectOutputDirectory(win);
+  });
+
   ipcMain.handle("probe", async (_e, filePath: string) => {
     if (typeof filePath !== "string") throw new Error(MSG.unsupported);
     if (!isLikelyVideoPath(filePath) && !existsSync(filePath)) {
@@ -117,7 +141,10 @@ export function registerIpc(ctx: MainContext): void {
     if (cap != null && isTargetTooLarge(cap, probe.sizeBytes)) {
       return { ok: false, reason: "target_too_large", message: MSG.targetTooLarge };
     }
-    return checkGuards(probe, cap);
+    const output = readOutput(input?.output);
+    const problem = validateOutput(output);
+    if (problem) return { ok: false, reason: "no_write", message: problem };
+    return checkGuards(probe, cap, output.directory);
   });
 
   ipcMain.handle("start-compress", async (_e, input: StartInput) => {
@@ -126,13 +153,16 @@ export function registerIpc(ctx: MainContext): void {
     const cap = readCap(input?.targetMB);
     if (cap === "bad") throw new Error("请输入小于原片大小的有效目标。");
     if (cap != null && isTargetTooLarge(cap, probe.sizeBytes)) throw new Error(MSG.targetTooLarge);
+    const output = readOutput(input?.output);
+    const outputProblem = validateOutput(output);
+    if (outputProblem) throw new Error(outputProblem);
     const decision = await ctx.session.decideStart();
     if (decision.action !== "start") {
       throw Object.assign(new Error(decision.action === "block" ? decision.message : "请稍候…"), {
         license: decision,
       });
     }
-    const guard = await checkGuards(probe, cap);
+    const guard = await checkGuards(probe, cap, output.directory);
     if (!guard.ok) {
       throw Object.assign(new Error(guard.message), { guard });
     }
@@ -147,6 +177,7 @@ export function registerIpc(ctx: MainContext): void {
       ffmpegPath: bins.ffmpeg,
       probe,
       targetMB: cap,
+      output,
       caps,
       preferredEncoder,
       hooks: {
@@ -169,8 +200,11 @@ export function registerIpc(ctx: MainContext): void {
     if (ctx.queue.isBusy() || ctx.job.isRunning || ctx.analyzer.isRunning || pendingAnalysis) return busy();
     const items = readQueueItems(input);
     if (items.length === 0) return { ok: false, message: "没有可以压缩的视频。" };
+    const output = readOutput(input?.output);
+    const outputProblem = validateOutput(output);
+    if (outputProblem) return { ok: false, message: outputProblem };
     ctx.preview.revoke();
-    return ctx.queue.start(items);
+    return ctx.queue.start(items, output);
   });
 
   ipcMain.handle("queue-cancel-item", async (_e, id: string) => {

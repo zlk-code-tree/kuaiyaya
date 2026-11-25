@@ -1,6 +1,7 @@
 import type { EncoderKind } from "../shared/types";
 
 const SAVED_BESIDE_SOURCE = "输出文件已保存在原片同一目录";
+const SAVED_CHOSEN_DIR = "输出文件已保存到所选文件夹";
 const QUALITY_REDUCED = "已压到目标上限以内。为达到这个体积，画质可能略低于按清晰度优先的结果。";
 const TRIAL_PATH_DIFFERS = "输出文件已保存。实际编码参数与试压不同，请检查画质。";
 
@@ -9,10 +10,12 @@ export function doneSubtitle(input: {
   usedAnalysis: boolean;
   encoder: EncoderKind;
   analysisEncoder: EncoderKind | null;
+  customDirectory?: boolean;
 }): string {
-  if (input.qualityReduced) return `${SAVED_BESIDE_SOURCE}\n${QUALITY_REDUCED}`;
+  const saved = input.customDirectory ? SAVED_CHOSEN_DIR : SAVED_BESIDE_SOURCE;
+  if (input.qualityReduced) return `${saved}\n${QUALITY_REDUCED}`;
   if (trialPathDiffers(input)) return TRIAL_PATH_DIFFERS;
-  return SAVED_BESIDE_SOURCE;
+  return saved;
 }
 
 /**

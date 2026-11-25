@@ -1,6 +1,9 @@
 import { isTargetTooLarge } from "../../shared/bitrate";
 import { readSharedTarget } from "../../shared/queue";
 
+/** 点一下填进「压到多大」。不是方案库，也没有「原片一半」。 */
+export const SIZE_PRESETS_MB = [10, 25] as const;
+
 export interface TargetState {
   sizeBytes: number;
   /** null：没填，按清晰度优先。 */

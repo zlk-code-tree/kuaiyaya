@@ -1,4 +1,5 @@
-import type { DoneEvent, FailEvent, ProbeInfo, ProgressEvent } from "../../shared/types";
+import { normalizeOutputPlan } from "../../shared/filename";
+import type { DoneEvent, FailEvent, OutputPlan, ProbeInfo, ProgressEvent } from "../../shared/types";
 import type { StartDecision } from "../../shared/license-machine";
 import { MSG } from "../../shared/messages";
 import {
@@ -33,9 +34,9 @@ export interface QueueRunHooks {
 export interface BatchQueueDeps {
   /** 一轮开始时调用一次。通过后，本轮剩余条目和重试都不再调用。 */
   decideStart: () => Promise<StartDecision>;
-  prepare: (item: { id: string; filePath: string; targetMB: number | null }) => Promise<PrepareResult>;
+  prepare: (item: { id: string; filePath: string; targetMB: number | null; outputDirectory?: string | null }) => Promise<PrepareResult>;
   /** 必须走现有 CompressJob（或测试替身），不要在队列里另写编码。每条运行中的条目各调一次。 */
-  runJob: (item: QueueItemSnapshot, probe: ProbeInfo, hooks: QueueRunHooks) => Promise<void>;
+  runJob: (item: QueueItemSnapshot, probe: ProbeInfo, hooks: QueueRunHooks, output: OutputPlan) => Promise<void>;
   /** 只取消这一支对应的 Job。 */
   cancelJob: (itemId: string) => Promise<void>;
   /**
@@ -87,6 +88,7 @@ function clampLimit(value: number): 1 | 2 | 3 {
  */
 export class BatchQueue {
   private items: QueueItemSnapshot[] = [];
+  private outputPlan: OutputPlan = { directory: null, pattern: null };
   private phase: QueuePhase = "idle";
   private batchLimit: 1 | 2 | 3 = 1;
   private inflight = 0;
@@ -112,8 +114,8 @@ export class BatchQueue {
     };
   }
 
-  async start(input: QueueStartItem[]): Promise<QueueStartResult> {
-    const job = this.begin(input);
+  async start(input: QueueStartItem[], output?: OutputPlan): Promise<QueueStartResult> {
+    const job = this.begin(input, output);
     this.pending = this.pending.then(() => job.then(() => undefined, () => undefined));
     return job;
   }
@@ -177,7 +179,7 @@ export class BatchQueue {
     this.resume();
   }
 
-  private async begin(input: QueueStartItem[]): Promise<QueueStartResult> {
+  private async begin(input: QueueStartItem[], output?: OutputPlan): Promise<QueueStartResult> {
     if (this.phase === "running" || this.deciding || this.starting || this.inflight > 0) {
       return { ok: false, code: "busy", message: "正在处理其他任务，请稍候。" };
     }
@@ -185,6 +187,7 @@ export class BatchQueue {
     this.starting = true;
     this.abortStart = false;
     this.deciding = true;
+    this.outputPlan = normalizeOutputPlan(output);
     try {
       const decision = await this.deps.decideStart();
       if (this.abortStart) return { ok: false, code: "cancelled", message: MSG.cancelled };
@@ -272,7 +275,12 @@ export class BatchQueue {
     if (item.status !== "waiting") return;
     let prepared: PrepareResult;
     try {
-      prepared = await this.deps.prepare({ id: item.id, filePath: item.filePath, targetMB: item.targetMB });
+      prepared = await this.deps.prepare({
+        id: item.id,
+        filePath: item.filePath,
+        targetMB: item.targetMB,
+        outputDirectory: this.outputPlan.directory,
+      });
     } catch (err) {
       if (item.status !== "waiting") return;
       item.status = "failed";
@@ -336,7 +344,7 @@ export class BatchQueue {
       },
     };
     try {
-      await this.deps.runJob(cloneItem(item), prepared.probe, hooks);
+      await this.deps.runJob(cloneItem(item), prepared.probe, hooks, this.outputPlan);
     } catch (err) {
       if (!saw && item.status === "running") {
         item.status = "failed";

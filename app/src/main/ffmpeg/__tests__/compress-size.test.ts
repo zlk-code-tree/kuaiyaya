@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
@@ -406,6 +406,43 @@ it("does not save a result that is not smaller than the source", async () => {
     expect(existsSync(`${output}.x265pass-0.log.cutree`)).toBe(false);
     expect(existsSync(`${output}.x265pass.log.cutree`)).toBe(false);
     expect(await readFile(input, "utf8")).toBe("original-bytes");
+  });
+});
+
+it("writes the chosen name into the chosen folder and does not overwrite an existing file", async () => {
+  await withFakeFfmpeg(onePass, async (dir, executable) => {
+    const input = join(dir, "input.mp4");
+    await writeFile(input, "original-bytes");
+    const outDir = join(dir, "out");
+    await mkdir(outDir);
+    const existing = join(outDir, "input_mail.mp4");
+    await writeFile(existing, "keep");
+    const caps: EncoderCaps = {
+      x265: false, videotoolbox: true, ffmpegVersion: "test", probedAt: "", ffmpegPath: executable,
+    };
+    const output = { directory: outDir, pattern: "{originalStem}_mail.mp4" };
+    const run = () => new Promise<{ outputPath: string }>((resolve, reject) => {
+      void new CompressJob().run({
+        ffmpegPath: executable,
+        probe: probeFor(input, 5 * 1024 * 1024),
+        targetMB: null,
+        output,
+        caps,
+        hooks: {
+          exists: existsSync,
+          onProgress: () => undefined,
+          onDone: (event) => resolve({ outputPath: event.outputPath }),
+          onFail: (event) => reject(new Error(event.message)),
+        },
+      });
+    });
+    const first = await run();
+    expect(first.outputPath).toBe(join(outDir, "input_mail (2).mp4"));
+    expect(await readFile(existing, "utf8")).toBe("keep");
+    expect(existsSync(join(dir, "input_720p.mp4"))).toBe(false);
+    const second = await run();
+    expect(second.outputPath).toBe(join(outDir, "input_mail (3).mp4"));
+    expect(await readFile(existing, "utf8")).toBe("keep");
   });
 });
 

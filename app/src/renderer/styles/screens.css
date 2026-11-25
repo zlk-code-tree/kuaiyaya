@@ -116,11 +116,15 @@
 }
 #screen-ready .panel { padding: 14px 18px 12px; }
 
+#screen-ready { overflow: auto; }
 #screen-queue { min-height: 0; }
 #screen-queue .page-heading { margin-bottom: 8px; flex-shrink: 0; }
 #screen-queue .page-heading h2 { font-size: 20px; }
 #screen-queue .page-heading p { max-width: 460px; line-height: 1.45; }
 #screen-queue .queue-target-panel { margin-top: 0; flex-shrink: 0; padding: 12px 14px 10px; }
+#screen-queue .preset-row { margin-top: 8px; }
+#screen-queue .output-block { margin-top: 8px; padding-top: 8px; }
+#screen-queue .output-block .hint { margin-top: 4px; }
 #screen-queue .queue-mb { margin-top: 10px; max-width: 320px; }
 #screen-queue .queue-mb input { width: 220px; text-align: left; font-weight: 500; }
 #screen-queue .queue-mb input::placeholder { color: #a39e90; font-weight: 400; font-size: 12px; }

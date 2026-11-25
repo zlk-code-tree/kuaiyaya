@@ -56,4 +56,22 @@ describe("done page subtitle", () => {
     expect(text).not.toContain("实际体积超出了参考目标");
     expect(reduced).not.toContain("已保存");
   });
+
+  it("says the file went to the chosen folder when the user picked one", () => {
+    const chosen = "输出文件已保存到所选文件夹";
+    expect(doneSubtitle({
+      qualityReduced: false,
+      usedAnalysis: false,
+      encoder: "x265",
+      analysisEncoder: null,
+      customDirectory: true,
+    })).toBe(chosen);
+    expect(doneSubtitle({
+      qualityReduced: true,
+      usedAnalysis: false,
+      encoder: "x265",
+      analysisEncoder: null,
+      customDirectory: true,
+    })).toBe(`${chosen}\n${reduced}`);
+  });
 });

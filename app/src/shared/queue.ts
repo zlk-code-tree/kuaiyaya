@@ -1,5 +1,5 @@
 import { isTargetTooLarge } from "./bitrate";
-import type { EncoderKind, ProgressEvent } from "./types";
+import type { EncoderKind, OutputPlan, ProgressEvent } from "./types";
 
 export type QueuePhase = "idle" | "running" | "done";
 
@@ -19,6 +19,7 @@ export interface QueueStartItem {
 
 export interface QueueStartRequest {
   items: QueueStartItem[];
+  output?: OutputPlan;
 }
 
 export interface QueueStartResult {

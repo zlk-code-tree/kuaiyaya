@@ -41,4 +41,19 @@ describe("output naming", () => {
   it("names 720p output as _720p", () => {
     expect(suggestedOutputName("/tmp/假期.mov", { width: 1280, height: 720 })).toBe("假期_720p.mp4");
   });
+
+  it("keeps the resolution name until a pattern or folder is set, then uses that and still refuses to overwrite", () => {
+    const small = { width: 1280, height: 720 };
+    const held = new Set<string>();
+    const nowhere = () => false;
+    expect(allocateOutputPath("/videos/假期.mov", nowhere, small)).toBe("/videos/假期_720p.mp4");
+    expect(allocateOutputPath("/videos/假期.mov", nowhere, small, { directory: "/out", pattern: null }, held)).toBe("/out/假期_720p.mp4");
+    expect(allocateOutputPath("/videos/假期.mov", nowhere, small, { directory: "/out", pattern: "{originalStem}_1080p.mp4" })).toBe("/out/假期_1080p.mp4");
+    const taken = (p: string) => p === "/out/假期_mail.mp4";
+    expect(allocateOutputPath("/videos/假期.mov", taken, small, { directory: "/out", pattern: "{originalStem}_mail" })).toBe("/out/假期_mail (2).mp4");
+    expect(allocateOutputPath("/videos/假期.mov", nowhere, small, { directory: "/out", pattern: "{originalStem}_mail.mp4" }, held)).toBe("/out/假期_mail.mp4");
+    expect(allocateOutputPath("/videos/假期.mov", nowhere, small, { directory: "/out", pattern: "{originalStem}_mail.mp4" }, held)).toBe("/out/假期_mail (2).mp4");
+    held.delete("/out/假期_mail.mp4");
+    expect(allocateOutputPath("/videos/假期.mov", nowhere, small, { directory: "/out", pattern: "{originalStem}_mail.mp4" }, held)).toBe("/out/假期_mail.mp4");
+  });
 });

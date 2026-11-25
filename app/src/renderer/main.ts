@@ -1,6 +1,7 @@
-import type { AnalysisProgress, AppScreen, DoneEvent, FailEvent, LicenseState, ProbeInfo, ProgressEvent, QualityAnalysis, UpdateCheckResult } from "../shared/types";
+import type { AnalysisProgress, AppScreen, DoneEvent, FailEvent, LicenseState, OutputPlan, ProbeInfo, ProgressEvent, QualityAnalysis, UpdateCheckResult } from "../shared/types";
 import { MSG } from "../shared/messages";
-import { suggestedOutputName } from "../shared/filename";
+import { patternProblem, plannedOutputName } from "../shared/filename";
+import { readSharedTarget } from "../shared/queue";
 import { MEDIA_SCHEME, isOutputPreviewUrl } from "../shared/preview-url";
 import { fitOutput, outputLabel } from "../shared/scale";
 import { clearPreviewVideo, donePreviewView, firstFrameNudge, type DonePreviewAvailability } from "./done-preview";
@@ -8,11 +9,12 @@ import { doneSubtitle } from "./done-sub";
 import { $, formatDuration, formatElapsed, formatMB, formatRemainDetail, toast } from "./dom";
 import { createQueueController, type QueueController } from "./queue-ui";
 import { showScreen } from "./state/machine";
-import { applySlider, applyTyped, fromFileSize, sliderThumbMB, tooLarge, type TargetState } from "./state/target-size";
+import { SIZE_PRESETS_MB, applySlider, applyTyped, fromFileSize, sliderThumbMB, tooLarge, type TargetState } from "./state/target-size";
 
 const HINT_EMPTY = "没填时，按清晰度估算这支视频在保证画质下能压到多小，再按这个结果压。1080p 及以下不缩小，更高分辨率长边不超过 1920。";
 const HINT_CAP = "这个数字是上限。尽量压到这个体积，并在限制里把清晰度做到最好；能压得更小就保留更小的，不会往大了凑。必须小于原片。";
 const HINT_INVALID = "请输入 1 以上的整数 MB，或清空后按清晰度自动压。";
+const OUTPUT_HINT = "留空按清晰度命名（1080p 为原名_1080p.mp4）。{originalStem} 会换成原文件名。同名自动加 (2)、(3)，不覆盖。";
 
 const api = window.kuaiyaya;
 
@@ -21,6 +23,9 @@ let queue!: QueueController;
 let license: LicenseState | null = null;
 let probe: ProbeInfo | null = null;
 let target: TargetState | null = null;
+let outputDirectory: string | null = null;
+let outputPattern = "";
+let activeOutput: OutputPlan = { directory: null, pattern: null };
 let lastOutput: string | null = null;
 let working = false;
 let analyzing = false;
@@ -126,7 +131,7 @@ function syncStartButton(): void {
   }
   btn.classList.remove("waiting");
   btn.textContent = "开始压缩";
-  btn.disabled = blocked || analyzing;
+  btn.disabled = blocked || analyzing || outputProblem() != null;
 }
 
 function setKeyMsg(kind: "ok" | "err" | "", text: string): void {
@@ -168,13 +173,98 @@ function renderTarget(opts?: { keepInput?: boolean }): void {
   const banner = $("targetBanner");
   const blocked = tooLarge(target);
   banner.classList.toggle("hidden", !blocked);
+  renderOutputRule();
+  syncOutputChrome();
+  syncStartButton();
+}
+
+function currentOutput(): OutputPlan {
+  const pattern = outputPattern.trim();
+  return { directory: outputDirectory, pattern: pattern || null };
+}
+
+function outputProblem(): string | null {
+  return patternProblem(outputPattern);
+}
+
+function renderOutputRule(): void {
+  if (!probe) return;
   const out = fitOutput({ width: probe.displayWidth, height: probe.displayHeight });
   const dim = outputLabel({ width: probe.displayWidth, height: probe.displayHeight });
   const scaled = out.width !== probe.displayWidth || out.height !== probe.displayHeight;
+  const name = plannedOutputName(probe.path, out, outputPattern);
+  const place = outputDirectory ? "保存在所选文件夹" : "与原片同一目录";
   $("outRule").textContent = scaled
-    ? `输出 ${dim} HEVC（H.265）mp4，带 hvc1 和 faststart。视频会按比例缩小，不放大。将保存为「${suggestedOutputName(probe.path, out)}」，与原片同一目录。`
-    : `输出保持 ${dim} HEVC（H.265）mp4，带 hvc1 和 faststart，不缩小。将保存为「${suggestedOutputName(probe.path, out)}」，与原片同一目录。`;
+    ? `输出 ${dim} HEVC（H.265）mp4，带 hvc1 和 faststart。视频会按比例缩小，不放大。将保存为「${name}」，${place}。`
+    : `输出保持 ${dim} HEVC（H.265）mp4，带 hvc1 和 faststart，不缩小。将保存为「${name}」，${place}。`;
+}
+
+function markPresets(prefix: string, mb: number | null): void {
+  for (const preset of SIZE_PRESETS_MB) {
+    const button = $(`${prefix}${preset}`) as HTMLButtonElement;
+    const on = mb === preset;
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+    button.classList.toggle("is-on", on);
+  }
+}
+
+function syncOutputChrome(queueLocked?: boolean): void {
+  const text = outputDirectory ? outputDirectory : "与原片同一目录";
+  for (const id of ["outputDirLabel", "queueOutputDirLabel"]) {
+    const el = $(id);
+    el.textContent = text;
+    if (outputDirectory) el.title = outputDirectory;
+    else el.removeAttribute("title");
+  }
+  for (const id of ["outputDirReset", "queueOutputDirReset"]) {
+    $(id).classList.toggle("hidden", !outputDirectory);
+  }
+  const problem = outputProblem();
+  for (const id of ["outputPatternHint", "queueOutputHint"]) {
+    const el = $(id);
+    el.classList.toggle("warn", problem != null);
+    el.textContent = problem ?? OUTPUT_HINT;
+  }
+  for (const id of ["outputPattern", "queueOutputPattern"]) {
+    const el = $(id) as HTMLInputElement;
+    if (document.activeElement === el) continue;
+    if (el.value !== outputPattern) el.value = outputPattern;
+  }
+  markPresets("readyPreset", target && !target.invalid ? target.targetMB : null);
+  const queueRead = readSharedTarget(($("queueTarget") as HTMLInputElement).value);
+  markPresets("queuePreset", queueRead.kind === "shared" ? queueRead.mb : null);
+  if (queueLocked == null) return;
+  for (const id of ["queueOutputPattern", "queueOutputDirBtn", "queueOutputDirReset", "queuePreset10", "queuePreset25"]) {
+    ($(id) as HTMLButtonElement).disabled = queueLocked;
+  }
+}
+
+function refreshOutputUi(): void {
+  if (probe && target) renderTarget();
+  else syncOutputChrome();
+  queue.syncStartButton();
+}
+
+function resetOutputDirectory(): void {
+  if (working || analyzing || queue.isRunning()) return;
+  outputDirectory = null;
+  refreshOutputUi();
+}
+
+async function chooseOutputDirectory(): Promise<void> {
+  if (working || analyzing || queue.isRunning()) return;
+  const picked = await api.selectOutputDirectory();
+  if (!picked) return;
+  outputDirectory = picked;
+  refreshOutputUi();
+}
+
+function onPatternInput(event: Event): void {
+  outputPattern = (event.target as HTMLInputElement).value;
+  syncOutputChrome();
+  renderOutputRule();
   syncStartButton();
+  queue.syncStartButton();
 }
 
 function renderAnalysisSummary(): void {
@@ -390,7 +480,13 @@ async function onStart(): Promise<void> {
     showAlert("无法开始压缩", MSG.targetTooLarge);
     return;
   }
-  const guard = await api.checkStartGuards({ filePath: probe.path, targetMB: target.targetMB });
+  const nameProblem = outputProblem();
+  if (nameProblem) {
+    showAlert("无法开始压缩", nameProblem);
+    return;
+  }
+  activeOutput = currentOutput();
+  const guard = await api.checkStartGuards({ filePath: probe.path, targetMB: target.targetMB, output: activeOutput });
   if (!guard.ok) {
     showAlert("无法开始压缩", guard.message ?? MSG.targetTooLarge);
     return;
@@ -411,7 +507,7 @@ async function onStart(): Promise<void> {
     setScreen("screen-work");
     working = true;
     try {
-      await api.startCompress({ filePath: probe.path, targetMB: target.targetMB });
+      await api.startCompress({ filePath: probe.path, targetMB: target.targetMB, output: activeOutput });
       showCompressUi();
     } catch (err) {
       working = false;
@@ -450,7 +546,7 @@ async function beginCompress(): Promise<void> {
   setScreen("screen-work");
   working = true;
   try {
-    await api.startCompress({ filePath: probe.path, targetMB: target.targetMB });
+    await api.startCompress({ filePath: probe.path, targetMB: target.targetMB, output: activeOutput });
   } catch (err) {
     working = false;
     setScreen("screen-ready");
@@ -706,6 +802,7 @@ function onDone(ev: DoneEvent): void {
     usedAnalysis,
     encoder: ev.encoder,
     analysisEncoder: usedAnalysis ? qualityAnalysis?.encoder ?? null : null,
+    customDirectory: activeOutput.directory != null,
   });
   $("statBefore").textContent = formatMB(ev.inputBytes);
   $("statAfter").textContent = formatMB(ev.outputBytes);
@@ -767,6 +864,9 @@ function bind(): void {
     setScreen,
     currentProbe: () => probe,
     currentReadyCap: () => (target && !target.invalid ? target.targetMB : null),
+    currentOutput,
+    outputProblem,
+    syncOutputChrome,
     openSingle: (info, carriedMB) => showReady(info, carriedMB ?? null),
     goIdle,
     hasLicense: () => license == null || license.hasStoredKey,
@@ -865,6 +965,20 @@ function bind(): void {
     $("analysisOverlay").classList.remove("show");
     ($("analyzeBtn") as HTMLButtonElement).focus();
   });
+
+  for (const mb of SIZE_PRESETS_MB) {
+    $(`readyPreset${mb}`).addEventListener("click", () => {
+      if (!target) return;
+      target = applyTyped(target, String(mb));
+      renderTarget();
+    });
+  }
+  $("outputDirBtn").addEventListener("click", () => void chooseOutputDirectory());
+  $("queueOutputDirBtn").addEventListener("click", () => void chooseOutputDirectory());
+  $("outputDirReset").addEventListener("click", () => resetOutputDirectory());
+  $("queueOutputDirReset").addEventListener("click", () => resetOutputDirectory());
+  $("outputPattern").addEventListener("input", onPatternInput);
+  $("queueOutputPattern").addEventListener("input", onPatternInput);
 
   const slider = $("sizeSlider") as HTMLInputElement;
   const input = $("sizeInput") as HTMLInputElement;
